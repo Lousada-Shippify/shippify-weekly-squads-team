@@ -1,0 +1,1 @@
+# shippify-weekly-squads-team
