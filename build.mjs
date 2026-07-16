@@ -10,7 +10,8 @@ if (!EMAIL || !TOKEN) { console.error('Defina os secrets JIRA_EMAIL e JIRA_API_T
 
 const AUTH = 'Basic ' + Buffer.from(`${EMAIL}:${TOKEN}`).toString('base64');
 const FIELDS = ['status','customfield_10028','customfield_10020','resolutiondate','summary','parent','assignee'];
-const PROJECTS = ['AE','OE','EE'];
+// AE pontua subtarefas -> inclui; OE/EE nao -> exclui
+const PROJECTS = [ ['AE', true], ['OE', false], ['EE', false] ];
 
 async function post(url, body) {
   const r = await fetch(url, {
@@ -67,8 +68,8 @@ function slim(issue) {
 }
 
 const squads = {};
-for (const p of PROJECTS) {
-  const jql = `project = ${p} AND sprint is not EMPTY AND issuetype NOT IN subtaskIssueTypes()`;
+for (const [p, incSub] of PROJECTS) {
+  const jql = `project = ${p} AND sprint is not EMPTY` + (incSub ? '' : ' AND issuetype NOT IN subtaskIssueTypes()');
   const issues = await searchAll(jql);
   squads[p] = issues.map(slim);
   console.log(`${p}: ${issues.length} issues`);
