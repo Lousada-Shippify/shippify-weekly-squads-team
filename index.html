@@ -549,7 +549,7 @@ function renderMap(){
   }
   // Carryover — herdado da sprint anterior
   html+='<div class="panel"><h2>📦 Carryover — herdado da sprint anterior</h2>'+
-    '<p class="panel-sub">Issues (sem subtarefas, sem canceladas) presentes na sprint anterior E na seguinte, com os SP atuais. Para a <strong>sprint ativa</strong>, o detalhamento mostra o status atual de cada issue herdada — em início de sprint, é o status em que ela migrou. Para sprints fechadas o Jira não preserva o status da virada.</p>'+
+    '<p class="panel-sub">Issues (sem subtarefas, sem canceladas) presentes na sprint anterior E na seguinte — exatamente o que o “Complete Sprint” do Jira moveu adiante (o que voltou ao backlog não conta). <strong>≈ SP com estimativas ATUAIS</strong>: em transições entre sprints fechadas, re-estimativas posteriores podem inflar o valor vs. a foto da época (o Jira não preserva o SP nem o status da virada). Para a <strong>sprint ativa</strong>, o detalhamento mostra o status atual de cada issue herdada.</p>'+
     '<table><thead><tr><th>Transição</th><th>Issues herdadas</th><th>SP herdados</th><th>% do scope da sprint</th></tr></thead><tbody>'+
     list.slice(1).map((s,i)=>{
       const prev=list[i];
@@ -557,7 +557,8 @@ function renderMap(){
       if(s.carryNA||s.carryN==null) return '<tr><td>'+lbl+'</td><td>—</td><td>—</td><td>—</td></tr>';
       const sc=scopeOf(s);
       const p=sc?pct(s.carrySP,sc):null;
-      return '<tr><td>'+lbl+'</td><td>'+s.carryN+'</td><td>'+fmtSP(s.carrySP)+'</td><td>'+(p!==null?'<span class="pill '+(p>40?'red':(p>20?'yellow':'green'))+'">'+p+'%</span>':'—')+'</td></tr>';
+      const mkT=s.state==='closed'?' <small style="color:var(--text-secondary)" title="reconstruído com estimativas atuais — pode diferir da foto da época no Jira">≈</small>':'';
+      return '<tr><td>'+lbl+'</td><td>'+s.carryN+'</td><td>'+fmtSP(s.carrySP)+mkT+'</td><td>'+(p!==null?'<span class="pill '+(p>40?'red':(p>20?'yellow':'green'))+'">'+p+'%'+(s.state==='closed'?' ≈':'')+'</span>':'—')+'</td></tr>';
     }).join('')+'</tbody></table>';
   if(a&&a.carryByStatus&&Object.keys(a.carryByStatus).length){
     const entries=Object.entries(a.carryByStatus).sort((x,y)=>y[1].sp-x[1].sp);
@@ -753,7 +754,8 @@ function buildConfluenceBody(){
       if(s.carryNA||s.carryN==null){ body+='<tr><td><p>'+lbl+'</p></td><td><p>—</p></td><td><p>—</p></td><td><p>—</p></td></tr>'; continue; }
       const sc=s.state==='active'?s.badgeScope:(s.scopeUnknown?null:s.scope);
       const p=sc?pct(s.carrySP,sc):null;
-      body+='<tr><td><p>'+lbl+'</p></td><td><p>'+s.carryN+'</p></td><td><p>'+fmtSP(s.carrySP)+'</p></td><td><p>'+(p!==null?'<span data-type="status" data-color="'+(p>40?'red':(p>20?'yellow':'green'))+'">'+p+'%</span>':'—')+'</p></td></tr>';
+      const mkT=s.state==='closed'?' ≈':'';
+      body+='<tr><td><p>'+lbl+'</p></td><td><p>'+s.carryN+'</p></td><td><p>'+fmtSP(s.carrySP)+mkT+'</p></td><td><p>'+(p!==null?'<span data-type="status" data-color="'+(p>40?'red':(p>20?'yellow':'green'))+'">'+p+'%'+mkT+'</span>':'—')+'</p></td></tr>';
     }
     body+='</tbody></table>';
     const a=d.active;
