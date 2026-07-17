@@ -2,6 +2,10 @@
 // Consulta o Jira (REST API v3) e gera data.json consumido pelo index.html.
 // Env: JIRA_EMAIL, JIRA_API_TOKEN (obrigatórios), JIRA_SITE (default shippify.atlassian.net)
 // Executado pelo GitHub Actions (.github/workflows/update-data.yml) a cada 3h ou via Run workflow.
+//
+// Campos de pontos (validados em 17/07/2026):
+//   customfield_10028 "Story Points"   = TOTAL da issue (já é a somatória DEV + QA)
+//   customfield_10546 "Story point QA" = parcela de QA (linha 🧪 QA do Desempenho por Dev/QA)
 
 const SITE = process.env.JIRA_SITE || 'shippify.atlassian.net';
 const EMAIL = process.env.JIRA_EMAIL;
@@ -9,9 +13,11 @@ const TOKEN = process.env.JIRA_API_TOKEN;
 if (!EMAIL || !TOKEN) { console.error('Defina os secrets JIRA_EMAIL e JIRA_API_TOKEN'); process.exit(1); }
 
 const AUTH = 'Basic ' + Buffer.from(`${EMAIL}:${TOKEN}`).toString('base64');
-const FIELDS = ['status','customfield_10028','customfield_10020','resolutiondate','summary','parent','assignee'];
-// AE pontua subtarefas -> inclui; OE/EE nao -> exclui
-const PROJECTS = [ ['AE', true], ['OE', false], ['EE', false] ];
+const FIELDS = ['status','customfield_10028','customfield_10546','customfield_10020','resolutiondate','summary','parent','assignee'];
+// NENHUMA squad inclui subtarefas: com a migração dos pontos para o campo Story Points (DEV + QA)
+// nos cards principais, incluir subtasks na AE duplicava pontos (badge AE Sprint 5 = 80 SP; com
+// subtasks o hub inflava para 142,5).
+const PROJECTS = [ ['AE', false], ['OE', false], ['EE', false] ];
 
 async function post(url, body) {
   const r = await fetch(url, {
@@ -56,6 +62,7 @@ function slim(issue) {
     fields: {
       summary: f.summary || '',
       customfield_10028: typeof f.customfield_10028 === 'number' ? f.customfield_10028 : null,
+      customfield_10546: typeof f.customfield_10546 === 'number' ? f.customfield_10546 : null,
       resolutiondate: f.resolutiondate || null,
       status: f.status ? { name: f.status.name, statusCategory: { key: f.status.statusCategory?.key || 'new' } } : null,
       customfield_10020: Array.isArray(f.customfield_10020)

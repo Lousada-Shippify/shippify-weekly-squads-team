@@ -18,9 +18,9 @@
   h1{font-weight:800;font-size:25px;margin:0 0 6px}
   .subtitle{font-family:Montserrat,sans-serif;color:var(--text-secondary);font-size:13px;margin:0}
   .cta{display:flex;flex-direction:column;align-items:flex-end;gap:8px}
-  .btn-weekly{border:none;background:var(--verde);color:#0B2412;padding:11px 20px;border-radius:8px;font-family:Geologica,sans-serif;font-size:14px;font-weight:700;cursor:pointer;transition:filter .15s}
-  .btn-weekly:hover{filter:brightness(1.08)}
-  .btn-weekly:disabled{opacity:.55;cursor:default}
+  .btn-refresh{border:none;background:var(--turquesa);color:#06222B;padding:11px 20px;border-radius:8px;font-family:Geologica,sans-serif;font-size:14px;font-weight:700;cursor:pointer;transition:filter .15s}
+  .btn-refresh:hover{filter:brightness(1.08)}
+  .btn-refresh:disabled{opacity:.55;cursor:default}
   .cta-status{font-family:Montserrat,sans-serif;font-size:12px;color:var(--text-secondary);max-width:340px;text-align:right}
   .cta-status a{color:var(--turquesa);font-weight:600}
   .view-tabs{display:flex;gap:4px;background:var(--bg-surface);border:1px solid var(--border);padding:4px;border-radius:10px;width:fit-content;margin-bottom:18px}
@@ -37,11 +37,13 @@
   th{background:var(--bg-card);color:var(--text-secondary);font-family:Geologica,sans-serif;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
   tbody tr:nth-child(odd) td{background:rgba(255,255,255,.015)}
   tr.total-row td{font-weight:700;background:var(--bg-card)!important}
+  tr.qa-row td{background:rgba(170,30,193,.08)!important;border-top:1px solid rgba(170,30,193,.35)}
   .pill{display:inline-block;padding:3px 10px;border-radius:4px;font-family:Geologica,sans-serif;font-size:11px;font-weight:600;letter-spacing:.03em;white-space:nowrap}
   .pill.green{background:rgba(78,203,113,.18);color:var(--verde)}
   .pill.yellow{background:rgba(193,157,30,.18);color:var(--amarelo)}
   .pill.red{background:rgba(193,30,66,.18);color:#E8557B}
   .pill.blue{background:rgba(30,164,193,.18);color:var(--turquesa)}
+  .pill.purple{background:rgba(170,30,193,.18);color:#D06CE0}
   .pill.gray{background:rgba(255,255,255,.08);color:var(--text-secondary)}
   .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
   .kpi-card{background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:14px 16px}
@@ -83,11 +85,11 @@
   <header class="top">
     <div>
       <h1>Weekly Product — Engineering Squads</h1>
-      <p class="subtitle" id="subtitle">Carregando dados ao vivo do Jira…</p>
+      <p class="subtitle" id="subtitle">Carregando dados do Jira…</p>
     </div>
     <div class="cta">
-      <button class="btn-weekly" id="btnRefresh">🔄 Atualizar dados</button>
-      <div class="cta-status" id="ctaStatus">Dados regenerados automaticamente do Jira a cada 3h via GitHub Actions · <a href="https://github.com/Lousada-Shippify/shippify-weekly-squads-team/actions/workflows/update-data.yml" target="_blank" style="color:var(--turquesa)">forçar atualização agora (Run workflow)</a></div>
+      <button class="btn-refresh" id="btnRefresh" disabled title="Recarrega o data.json mais recente gerado pelo GitHub Actions (sem cache)">🔄 Atualizar dados</button>
+      <div class="cta-status" id="ctaStatus">Dados regenerados do Jira a cada 3h via GitHub Actions · <a href="https://github.com/Lousada-Shippify/shippify-weekly-squads-team/actions/workflows/update-data.yml" target="_blank">forçar atualização agora (Run workflow)</a></div>
     </div>
   </header>
 
@@ -97,7 +99,7 @@
   </div>
 
   <div id="errBox" class="err hidden"></div>
-  <div id="loading" class="loading"><div class="spinner"></div><span id="loadingMsg">Consultando Jira (AE · OE · EE)…</span></div>
+  <div id="loading" class="loading"><div class="spinner"></div><span id="loadingMsg">Carregando data.json…</span></div>
 
   <div id="viewPlan" class="hidden"></div>
   <div id="viewMap" class="hidden">
@@ -109,19 +111,32 @@
 </div>
 
 <script>
-const CLOUD = 'shippify.atlassian.net';
-const T_SEARCH = 'mcp__3fb2a7a0-782a-45ec-913e-b171f0c68891__searchJiraIssuesUsingJql';
-const T_DESC   = 'mcp__3fb2a7a0-782a-45ec-913e-b171f0c68891__getConfluencePageDescendants';
-const T_CREATE = 'mcp__3fb2a7a0-782a-45ec-913e-b171f0c68891__createConfluencePage';
+// Campos de pontos (validados em 17/07/2026 contra OE Sprint 5):
+//   customfield_10028 "Story Points"      = TOTAL da issue (já é a somatória DEV + QA)
+//   customfield_10546 "Story point QA"    = parcela de QA
+//   customfield_10548 "Story point total" = parcela de DEV  (10028 = 10546 + 10548)
 const SP_FIELD = 'customfield_10028';
+const QA_FIELD = 'customfield_10546';
 const SPRINT_FIELD = 'customfield_10020';
-const SPACE_ID = '2523141';
-const OKRS_PAGE = '11599873';        // 03 · OKRs & Metrics
-const WPM_FOLDER = '12091397';       // Weekly Product Meeting
+// QA de cada squad — os pontos de QA vivem no campo "Story point QA" das histórias/tarefas/bugs.
+// A responsabilidade (assignee) das tarefas NUNCA passa para o QA: a atribuição ao QA acontece
+// quando a issue entra nos status pertinentes a QA. Regra:
+//   não iniciado (QA) = PENDING QA (chegou ao QA, teste ainda não começou)
+//   em andamento (QA) = ON TESTING (ON GOING QA) · QA VERIFIED (APPROVED BY QA) · QA DENIED (REJECTED BY QA)
+//   entregue (QA)     = só DONE
+// Issues ainda em dev (backlog, Sendo feito, CODE REVIEW…) NÃO contam como atribuídas ao QA.
+const QA_OWNER = {
+  AE:'Sairys — QA (sairys@shippify.co)',
+  EE:'Mikael Ferreira — QA (mikael.ferreira.t@shippify.co)',
+  OE:'Nathaly Brasiliano — QA (nathaly.brasiliano.t@shippify.co)',
+};
+const QA_PROG_RE = /(ON\s*GOING\s*QA|ON\s*TESTING|APPROVED\s*BY\s*QA|QA\s*VERIFIED|REJECTED\s*BY\s*QA|QA\s*DENIED)/i;
+const QA_WAIT_RE = /PENDING\s*QA/i;
 const SQUADS = [
-  // AE pontua SUBTAREFAS (o board/painel de sprint da squad conta esses SP) → includeSubtasks.
-  // OE e EE não pontuam subtasks → excluídas (regra validada contra os badges do backlog).
-  {code:'AE', name:'Apps Experience',      project:'AE', board:479, includeSubtasks:true},
+  // NENHUMA squad inclui subtarefas: com a migração dos pontos para o campo Story Points
+  // (DEV + QA) nos cards principais, incluir subtasks na AE duplicava pontos.
+  // Validado em 17/07/2026 contra o badge do backlog AE Sprint 5: 35 + 5,5 + 39,5 = 80 SP.
+  {code:'AE', name:'Apps Experience',      project:'AE', board:479},
   {code:'OE', name:'Operation Experience', project:'OE', board:474},
   {code:'EE', name:'Ecosystem Experience', project:'EE', board:475},
 ];
@@ -129,8 +144,6 @@ const SQUADS = [
 // anexo OE + Sprint Plans 5570562 e 22708225). Sprints fechadas não mudam mais; os campos atuais
 // do Jira NÃO preservam a foto da época (commitment, SP re-estimados, clones herdam sprint field),
 // então a reconstrução via JQL divergiria. Sem baseline → reconstrução, marcada com "≈".
-// Sugestões iniciais de Sprint Agreements (Sprint 4) — mapeadas dos cards da sprint, da Retrospective
-// Sprint 3 e do histórico de gargalos. Semeadas UMA vez nos campos editáveis; o PM ajusta à vontade.
 const AGR_SUGGEST={
   AE:{sprint:'Sprint 4',
     constraints:'No public holidays, but we are in the World Cup period — there may be matches / possible breaks.\nDeveloper Patrick on vacation from mid-sprint, returning halfway through Sprint 5 (08/07 ~ 20/07).',
@@ -175,26 +188,6 @@ const pct = (a,b) => b>0 ? Math.round(a/b*100) : 0;
 const ddmm = d => String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0');
 const ddmmyyyy = d => ddmm(d)+'/'+d.getFullYear();
 
-function parseResult(r){
-  if(r.isError){ throw new Error((r.content&&r.content[0]&&r.content[0].text)||'Erro MCP'); }
-  if(r.structuredContent) return r.structuredContent;
-  return JSON.parse(r.content[0].text);
-}
-
-async function runJql(jql, fields){
-  let nodes=[], token=null;
-  for(let i=0;i<15;i++){
-    const args={cloudId:CLOUD, jql, fields, maxResults:100, searchResultMode:'issues'};
-    if(token) args.nextPageToken=token;
-    const d = parseResult(await window.cowork.callMcpTool(T_SEARCH,args));
-    const iss = d.issues||d;
-    nodes = nodes.concat(iss.nodes||[]);
-    const pi = iss.pageInfo||{};
-    if(pi.hasNextPage && pi.endCursor) token=pi.endCursor; else break;
-  }
-  return nodes;
-}
-
 function workdayIndex(start, today){
   // business days elapsed from sprint start (inclusive) to today
   let d=new Date(start); d.setHours(0,0,0,0);
@@ -230,7 +223,8 @@ function processSquad(sq, nodes){
     const sorted = mySprints.slice().sort((a,b)=>new Date(a.startDate||0)-new Date(b.startDate||0));
     recs.push({key:n.key, sp, cat, cancelled, status:(f.status&&f.status.name)||'—', ids:sorted.map(x=>x.id),
       summary:f.summary||'', epic:(f.parent&&f.parent.fields&&f.parent.fields.summary)||null,
-      assignee:(f.assignee&&f.assignee.displayName)||null, spNull:f[SP_FIELD]==null});
+      assignee:(f.assignee&&f.assignee.displayName)||null, spNull:f[SP_FIELD]==null,
+      spqa:(typeof f[QA_FIELD]==='number'?f[QA_FIELD]:null)});
     const rec=recs[recs.length-1];
     for(const s of sorted){ const agg=getS(s); if(cancelled){agg.cancSP+=sp;agg.cancN++;} else {agg.scope+=sp;agg.count++;} }
     // active-sprint badges (non-subtask issues by status category, cancelled excluded)
@@ -341,6 +335,38 @@ function processSquad(sq, nodes){
     .filter(d=>d.n>0||d.histN>0)
     .map(d=>({...d,partN:d.part.size,avgSP:d.part.size?d.histSP/d.part.size:0,avgN:d.part.size?d.histN/d.part.size:0}))
     .sort((a,b)=>{if(a.name==='Sem responsável')return 1;if(b.name==='Sem responsável')return -1;return b.sp-a.sp;});
+  // ---- QA da squad: pontos do campo "Story point QA" (customfield_10546) nas histórias/tarefas/bugs.
+  // A atribuição ao QA só existe quando a issue está nos status de QA (ou já foi entregue).
+  const qa={name:QA_OWNER[sq.code]||('QA — '+sq.code),isQA:true,
+    n:0,dn:0,sp:0,dsp:0,isp:0,tsp:0,noSP:0,histSP:0,histN:0,part:new Set(),by:{}};
+  for(const r of recs){
+    if(r.cancelled) continue;
+    const v=r.spqa;
+    const inQA=QA_PROG_RE.test(r.status), waitQA=QA_WAIT_RE.test(r.status), doneQA=r.cat==='done';
+    const assignedToQA=inQA||waitQA||doneQA;
+    if(assignedToQA && v!=null && v>0){
+      for(const sid of r.ids){
+        if(closedIds.has(sid)) qa.part.add(sid);
+        const bs=qa.by[sid]=qa.by[sid]||{aSP:0,aN:0,dSP:0,dN:0};
+        bs.aSP+=v; bs.aN++;
+      }
+      if(doneQA&&r.delivSprintId!=null){
+        const bs=qa.by[r.delivSprintId]=qa.by[r.delivSprintId]||{aSP:0,aN:0,dSP:0,dN:0};
+        bs.dSP+=v; bs.dN++;
+      }
+      if(doneQA&&r.delivClosed){ qa.histSP+=v; qa.histN++; }
+    }
+    if(active&&r.ids.includes(active.id)){
+      if(!assignedToQA) continue;                 // ainda em dev → não é do QA
+      if(v==null){ qa.noSP++; continue; }         // no fluxo de QA sem estimativa de QA
+      if(v<=0) continue;
+      qa.n++; qa.sp+=v;
+      if(doneQA){ qa.dn++; qa.dsp+=v; }
+      else if(inQA) qa.isp+=v;                    // ON TESTING · QA VERIFIED · QA DENIED
+      else qa.tsp+=v;                             // PENDING QA = atribuído, não iniciado
+    }
+  }
+  const qaRow={...qa,partN:qa.part.size,avgSP:qa.part.size?qa.histSP/qa.part.size:0,avgN:qa.part.size?qa.histN/qa.part.size:0};
   // Resumo (Sprint Review) da última sprint FECHADA — formato da Retrospective/Rovo
   let review=null;
   const realClosed=list.filter(s=>s.state==='closed'&&!String(s.id).startsWith('bl-'));
@@ -361,13 +387,13 @@ function processSquad(sq, nodes){
       openN:openOut.length, openSP:openOut.reduce((x,r)=>x+r.sp,0),
       cancN:cancIn.length, cancSP:cancIn.reduce((x,r)=>x+r.sp,0)};
   }
-  return {squad:sq, sprints:list, active, issueCount:nodes.length, devs, review};
+  return {squad:sq, sprints:list, active, issueCount:nodes.length, devs, qa:qaRow, review};
 }
 
 async function loadAll(){
   document.getElementById('loadingMsg').textContent='Carregando data.json…';
-  const resp=await fetch('data.json?v='+Date.now());
-  if(!resp.ok) throw new Error('data.json ainda nao foi gerado. No repositorio: Settings > Secrets and variables > Actions > cadastre JIRA_EMAIL e JIRA_API_TOKEN, depois Actions > "Update data" > Run workflow.');
+  const resp=await fetch('data.json?v='+Date.now(),{cache:'no-store'});
+  if(!resp.ok) throw new Error('data.json ainda não foi gerado. No repositório: Settings > Secrets and variables > Actions > cadastre JIRA_EMAIL e JIRA_API_TOKEN, depois Actions > "Update data" > Run workflow.');
   const raw=await resp.json();
   window.__GEN__=raw.generatedAt;
   const results={};
@@ -404,7 +430,7 @@ function renderPlan(){
   const anyActive=SQUADS.map(s=>DATA[s.code].active).find(Boolean);
   const dayStr=anyActive?('Day '+anyActive.day+' of '+WORKDAYS):'';
   let html='<div class="panel"><h2>Overview — '+esc(sprintLabel(anyActive))+' <span class="pill blue">'+dayStr+'</span></h2>'+
-    '<p class="panel-sub">SP por status category do board, <strong>excluindo issues canceladas</strong> (statuses CANCEL têm categoria “done” no Jira mas não são entrega). <strong>AE inclui subtarefas</strong> (a squad pontua nelas — mesma régua do painel de sprint dela); OE/EE excluem (não pontuam subtasks). Duas métricas: <strong>% Done (SP)</strong> = Completed SP ÷ Scope SP · <strong>% Done (issues)</strong> = contagem de tickets.</p>'+
+    '<p class="panel-sub">SP = campo <strong>Story Points</strong> (customfield_10028), que <strong>já é a somatória dos pontos de DEV + QA</strong> da história/tarefa/bug, somado por status category do board, <strong>sem subtarefas</strong> (os pontos vivem nos cards principais — regra igual aos badges do backlog nas 3 squads) e <strong>excluindo issues canceladas</strong> (statuses CANCEL têm categoria “done” no Jira mas não são entrega). Duas métricas: <strong>% Done (SP)</strong> = Completed SP ÷ Scope SP · <strong>% Done (issues)</strong> = contagem de tickets.</p>'+
     '<table><thead><tr><th>Squad</th><th>Sprint Goal</th><th>Scope SP</th><th>Completed SP</th><th>Remaining SP</th><th>% Done (SP)</th><th>% Done (issues)</th></tr></thead><tbody>'+rows.join('')+
     '<tr class="total-row"><td>Total</td><td>—</td><td>'+fmtSP(totScope)+'</td><td>'+fmtSP(totDone)+'</td><td>'+fmtSP(totScope-totDone)+'</td><td>'+pct(totDone,totScope)+'%</td><td>—</td></tr>'+
     '</tbody></table></div>';
@@ -438,7 +464,7 @@ function renderPlan(){
       '<tr><th>✅ Tarefas concluídas ('+(a.doneList?a.doneList.length:0)+')</th><td>'+doneListHtml+'</td></tr>'+
       agrRow('constraints','Sprint Constraints ✏️')+agrRow('risks','Risks ✏️')+agrRow('validations','Validations ✏️')+
       '</tbody></table>'+
-      '<p style="font-size:11px;color:var(--text-disabled);margin:6px 0 14px">✏️ campos editáveis — anotações locais deste navegador (não são publicadas).</p>'+
+      '<p style="font-size:11px;color:var(--text-disabled);margin:6px 0 14px">✏️ campos editáveis — salvos automaticamente neste navegador (localStorage).</p>'+
       (()=>{const pd=pct(a.doneSP,a.badgeScope), pi=pct(a.inprogSP,a.badgeScope), pn=Math.max(0,100-pd-pi);
         return '<h4 style="margin:14px 0 4px;font-size:13px">Progresso do sprint <small style="color:var(--text-secondary);font-weight:400">(por SP — espelha o gadget do Jira)</small></h4>'+
         '<div class="sbar lg"><div style="background:var(--verde);width:'+pd+'%"></div><div style="background:var(--turquesa);width:'+pi+'%"></div></div>'+
@@ -520,7 +546,7 @@ function renderMap(){
   const rowGoal=list.map(s=>'<td style="min-width:160px;font-size:12px">'+esc((s.goal||'—').split('\n')[0].slice(0,120))+'</td>').join('');
   const rowCanc=list.map(s=>'<td>'+(s.cancSP>0?fmtSP(s.cancSP)+' <small>('+s.cancN+' issues)</small>':'—')+'</td>').join('');
   let html='<div class="panel"><h2>Métricas-chave — '+d.squad.name+' ('+curSquad+')</h2>'+
-    '<p class="panel-sub">Sprints fechadas usam os <strong>números oficiais dos reports</strong> (badges do Jira lidos na época) — os campos atuais do Jira não preservam a foto da sprint (scope commitment, SP re-estimados, clones). Valores com "≈" são reconstruídos dos campos atuais. Sprint ativa: leitura ao vivo, excluindo subtarefas e canceladas.</p>'+
+    '<p class="panel-sub">SP = campo <strong>Story Points</strong> (customfield_10028) — <strong>já é a somatória dos pontos de DEV + QA</strong> registrados nas histórias, tarefas e bugs. Sprints fechadas usam os <strong>números oficiais dos reports</strong> (badges do Jira lidos na época) — os campos atuais do Jira não preservam a foto da sprint (scope commitment, SP re-estimados, clones). Valores com "≈" são reconstruídos dos campos atuais. Sprint ativa: leitura ao vivo, excluindo subtarefas e canceladas.</p>'+
     '<table><thead><tr><th>Métrica</th>'+head+'</tr></thead><tbody>'+
     '<tr><td><strong>Scope SP</strong></td>'+rowScope+'</tr>'+
     '<tr><td><strong>Delivered SP</strong></td>'+rowDel+'</tr>'+
@@ -589,13 +615,25 @@ function renderMap(){
         '<td>'+fmtSP(v.isp)+'</td><td>'+fmtSP(v.tsp)+'</td><td>'+(v.noSP||'0')+'</td>'+
         '<td>'+(p!==null?'<span class="pill '+(p>=60?'green':(p>=35?'yellow':'red'))+'">'+p+'%</span>':'—')+'</td></tr>';
     }).join('');
+    // Linha de QA da squad — campo "Story point QA" (customfield_10546) das issues da sprint
+    const q=d.qa;
+    const qaRowHtml=(q&&(q.n>0||q.histN>0||q.noSP>0))?(()=>{
+      const p=q.sp>0?pct(q.dsp,q.sp):null;
+      return '<tr class="qa-row"><td style="font-weight:600">🧪 '+esc(q.name)+' <span class="pill purple">Story point QA</span></td>'+
+        '<td>'+q.n+'</td><td>'+q.dn+'</td><td>'+fmtSP(q.sp)+'</td><td style="color:var(--verde);font-weight:600">'+fmtSP(q.dsp)+'</td>'+
+        '<td>'+fmtSP(q.isp)+'</td><td>'+fmtSP(q.tsp)+'</td><td>'+(q.noSP||'0')+'</td>'+
+        '<td>'+(p!==null?'<span class="pill '+(p>=60?'green':(p>=35?'yellow':'red'))+'">'+p+'%</span>':'—')+'</td></tr>';
+    })():'';
     const closedCnt=list.filter(s=>s.state==='closed'&&!String(s.id).startsWith('bl-')).length;
     html+='<div class="panel"><h2>👤 Desempenho por Dev/QA — '+esc(sprintLabel(a))+'</h2>'+
-      '<p class="panel-sub">Responsável (assignee) das issues da sprint atual, sem subtarefas e sem canceladas.</p>'+
+      '<p class="panel-sub">Devs: responsável (assignee) das issues da sprint atual, SP = campo <strong>Story Points</strong> (DEV + QA), sem subtarefas e sem canceladas. <strong>Linha 🧪 QA</strong>: pontos do campo <strong>Story point QA</strong> das histórias/tarefas/bugs. A responsabilidade (assignee) nunca passa para o QA — a issue é <strong>atribuída ao QA quando entra nos status de QA</strong>: <strong>não iniciado</strong> = PENDING QA · <strong>em andamento</strong> = ON TESTING (ON GOING QA), QA VERIFIED (APPROVED BY QA), QA DENIED (REJECTED BY QA) · <strong>entregue apenas quando DONE</strong>. Issues ainda em dev não contam para o QA. “Sem SP” (QA) = issues no fluxo de QA sem estimativa de QA.</p>'+
       '<table><thead><tr><th>Dev / QA</th><th>Issues atrib.</th><th>Issues concl.</th><th>SP atribuídos</th><th>SP entregues</th><th>SP em andamento</th><th>SP não iniciados</th><th>Sem SP</th><th>% SP entregue</th></tr></thead><tbody>'+rowsD+
-      '<tr class="total-row"><td>TOTAL</td><td>'+totD.n+'</td><td>'+totD.dn+'</td><td>'+fmtSP(totD.sp)+'</td><td>'+fmtSP(totD.dsp)+'</td><td>'+fmtSP(totD.isp)+'</td><td>'+fmtSP(totD.tsp)+'</td><td>'+totD.noSP+'</td>'+
+      '<tr class="total-row"><td>TOTAL devs (Story Points)</td><td>'+totD.n+'</td><td>'+totD.dn+'</td><td>'+fmtSP(totD.sp)+'</td><td>'+fmtSP(totD.dsp)+'</td><td>'+fmtSP(totD.isp)+'</td><td>'+fmtSP(totD.tsp)+'</td><td>'+totD.noSP+'</td>'+
       '<td>'+(totD.sp>0?pct(totD.dsp,totD.sp)+'%':'—')+'</td></tr>'+
-      '</tbody></table></div>';
+      qaRowHtml+
+      '</tbody></table>'+
+      (qaRowHtml?'<p style="font-size:11px;color:var(--text-disabled);margin:8px 0 0">A linha 🧪 QA não soma no TOTAL: os pontos de QA já estão contidos no campo Story Points das issues (Story Points = DEV + QA).</p>':'')+
+      '</div>';
     // Matriz Dev/QA × Sprint: entregas (e alocação) por sprint + média final
     const realS=list.filter(s=>!String(s.id).startsWith('bl-'));
     const cellD=(v,s)=>{
@@ -604,12 +642,13 @@ function renderMap(){
       return '<td style="white-space:nowrap"><strong style="color:var(--verde)">'+fmtSP(b.dSP)+' SP</strong> · '+b.dN+' tsk'+
         '<br><small style="color:var(--text-secondary)">aloc. '+fmtSP(b.aSP)+' SP · '+b.aN+'</small></td>';
     };
+    const avgCell=v=>'<td style="white-space:nowrap;background:rgba(78,203,113,.06)"><strong>'+fmtSP(Math.round(v.avgSP*100)/100)+' SP</strong> · '+(Math.round(v.avgN*10)/10)+' tarefas<br><small style="color:var(--text-secondary)">'+v.partN+' sprint(s) fechada(s)</small></td>';
     html+='<div class="panel"><h2>📊 Entregas por Dev/QA × Sprint</h2>'+
-      '<p class="panel-sub">Por sprint: <strong style="color:var(--verde)">entregue</strong> (SP · tarefas, atribuído à sprint em que a issue foi concluída) e, abaixo, o alocado. <strong>Média final</strong> = entregue ÷ '+closedCnt+' sprints fechadas em que participou — recalcula ao vivo quando cada sprint encerra (a atual entra ao fechar).</p>'+
+      '<p class="panel-sub">Por sprint: <strong style="color:var(--verde)">entregue</strong> (SP · tarefas, atribuído à sprint em que a issue foi concluída) e, abaixo, o alocado. Devs em SP totais (Story Points = DEV + QA); linha 🧪 QA em <strong>Story point QA</strong> — atribuída ao QA quando a issue entra nos status de QA, entregue só quando chega a DONE. <strong>Média final</strong> = entregue ÷ '+closedCnt+' sprints fechadas em que participou — recalcula ao vivo quando cada sprint encerra (a atual entra ao fechar).</p>'+
       '<table><thead><tr><th>Dev / QA</th>'+realS.map(s=>'<th>'+esc(sprintLabel(s))+(s.state==='active'?' ⬅️ atual':'')+'</th>').join('')+'<th>Média final /sprint</th></tr></thead><tbody>'+
       d.devs.map(v=>'<tr><td'+(v.name==='Sem responsável'?' style="color:var(--text-disabled);font-style:italic"':' style="font-weight:600"')+'>'+esc(v.name)+'</td>'+
-        realS.map(s=>cellD(v,s)).join('')+
-        '<td style="white-space:nowrap;background:rgba(78,203,113,.06)"><strong>'+fmtSP(Math.round(v.avgSP*100)/100)+' SP</strong> · '+(Math.round(v.avgN*10)/10)+' tarefas<br><small style="color:var(--text-secondary)">'+v.partN+' sprint(s) fechada(s)</small></td></tr>').join('')+
+        realS.map(s=>cellD(v,s)).join('')+avgCell(v)+'</tr>').join('')+
+      ((q&&(q.n>0||q.histN>0))?('<tr class="qa-row"><td style="font-weight:600">🧪 '+esc(q.name)+' <span class="pill purple">Story point QA</span></td>'+realS.map(s=>cellD(q,s)).join('')+avgCell(q)+'</tr>'):'')+
       '</tbody></table></div>';
   }
   html+='<div class="panel"><h2>Velocity — Scope vs Delivered</h2><div class="chart-holder"><canvas id="map_vel"></canvas></div></div>';
@@ -622,211 +661,6 @@ function renderMap(){
     scales:{x:{ticks:{color:'#666'},grid:{display:false}},y:{beginAtZero:true,ticks:{color:'#666'},grid:{color:'rgba(255,255,255,.05)'}}}}}));
 }
 
-/* ---------- Criar Weekly (Confluence) ---------- */
-function confStatus(p, day){
-  let c='blue'; const ideal=Math.round(day/WORKDAYS*100);
-  if(day>2){ c = p>=ideal-5?'green':(p>=ideal*0.5?'yellow':'red'); }
-  return '<span data-type="status" data-color="'+c+'">'+p+'%</span>';
-}
-function buildConfluenceBody(){
-  const today=new Date();
-  const acts=SQUADS.map(s=>DATA[s.code].active).filter(Boolean);
-  const a0=acts.slice().sort((x,y)=>x.start-y.start)[Math.floor(acts.length/2)]||acts[0];
-  const sprintN=sprintLabel(a0);
-  const day=Math.max(...acts.map(a=>a.day));
-  const dstr=d=>d.getDate()+' '+MONTHS_EN[d.getMonth()]+' '+d.getFullYear();
-  let totScope=0,totDone=0;
-  let body='<p><strong>'+esc(sprintN)+'</strong> · '+dstr(a0.start)+' → '+dstr(a0.end)+' · Day '+day+' of '+WORKDAYS+' · Last updated: '+dstr(today)+'</p>';
-  body+='<div data-type="panel-info"><p>Numbers are read live from the Jira boards as SP by status category (To Do + In Progress + Done), excluding sub-tasks and <strong>excluding cancelled issues</strong> (CANCEL-type statuses carry the “done” category in Jira but are not delivered work — they are removed from scope and reported separately). Two completion metrics are shown because they can diverge: <strong>% Done (SP)</strong> = Completed SP ÷ Scope SP (consistent with the burndown) and <strong>% Done (issues)</strong> = ticket count, as in Jira’s “Sprint progress” gadget.</p></div>';
-  body+='<h2>Overview — '+esc(sprintN)+'</h2><table data-layout="default"><tbody><tr><th><p>Squad</p></th><th><p>Sprint Goal</p></th><th><p>Scope SP</p></th><th><p>Completed SP</p></th><th><p>% Done (SP)</p></th><th><p>% Done (issues)</p></th></tr>';
-  for(const sq of SQUADS){
-    const a=DATA[sq.code].active; if(!a) continue;
-    totScope+=a.badgeScope; totDone+=a.doneSP;
-    body+='<tr><td><p><strong>'+sq.name+'</strong></p></td><td><p>'+esc((a.goal||'—').split('\n').slice(0,4).join(' · '))+'</p></td><td><p>'+fmtSP(a.badgeScope)+'</p></td><td><p>'+fmtSP(a.doneSP)+'</p></td><td><p>'+confStatus(pct(a.doneSP,a.badgeScope),a.day)+'</p></td><td><p>'+confStatus(pct(a.doneN,a.todoN+a.inprogN+a.doneN),a.day)+'</p></td></tr>';
-  }
-  body+='<tr><td><p><strong>Total</strong></p></td><td><p>—</p></td><td><p><strong>'+fmtSP(totScope)+'</strong></p></td><td><p><strong>'+fmtSP(totDone)+'</strong></p></td><td><p><strong>'+pct(totDone,totScope)+'%</strong></p></td><td><p>—</p></td></tr></tbody></table>';
-  for(const sq of SQUADS){
-    const d=DATA[sq.code], a=d.active; if(!a) continue;
-    const pSP=pct(a.doneSP,a.badgeScope), pIss=pct(a.doneN,a.todoN+a.inprogN+a.doneN);
-    const idealRem=+(a.badgeScope*(1-a.day/WORKDAYS)).toFixed(1);
-    const diff=+(a.remaining-idealRem).toFixed(1);
-    const diffTxt=diff>0.5?('+'+diff+' behind'):(diff<-0.5?(diff+' ahead'):'on track');
-    body+='<hr /><h2>'+sq.name+'</h2>';
-    const nl2p=t=>String(t).split('\n').filter(l=>l.trim()).map(l=>'<p>'+esc(l)+'</p>').join('')||'<p>—</p>';
-    const agrVal=f=>localStorage.getItem('wh_agr_'+sq.code+'_'+a.id+'_'+f)||'';
-    const delivBody=(a.deliveries||[]).slice(0,7).map(([nm,g])=>{
-      const tN=g.n-g.dn-g.inN, tSP=g.sp-g.dsp-g.insp;
-      return '<p><strong>'+esc(nm)+'</strong> ('+fmtSP(g.sp)+' SP · '+g.n+' issues): <span data-type="status" data-color="green">'+g.dn+' done · '+fmtSP(g.dsp)+' SP</span> <span data-type="status" data-color="blue">'+g.inN+' in progress · '+fmtSP(g.insp)+' SP</span> <span data-type="status" data-color="neutral">'+tN+' not started · '+fmtSP(tSP)+' SP</span></p>'+
-        (g.ex&&g.ex.length?'<p><em>e.g.: '+esc(g.ex.map(s=>s.slice(0,80)).join(' · '))+'</em></p>':'');
-    }).join('')||'<p>—</p>';
-    const doneBody=(a.doneList&&a.doneList.length)
-      ? a.doneList.slice(0,12).map(t=>'<p>✅ <strong>'+esc(t.key)+'</strong> — '+esc(t.summary.slice(0,100))+' ('+fmtSP(t.sp)+' SP)</p>').join('')
-        +(a.doneList.length>12?'<p><em>… +'+(a.doneList.length-12)+' more</em></p>':'')
-      : '<p>No tasks completed yet in this sprint.</p>';
-    body+='<h3>Sprint Agreements</h3><table data-layout="default"><tbody>'+
-      '<tr><th><p>Sprint Goal</p></th><td>'+nl2p(a.goal||'No goal set in Jira')+'</td></tr>'+
-      '<tr><th><p>Main Deliveries</p></th><td>'+delivBody+'</td></tr>'+
-      '<tr><th><p>Completed Tasks ('+(a.doneList?a.doneList.length:0)+')</p></th><td>'+doneBody+'</td></tr>'+
-      '<tr><th><p>Period</p></th><td><p>'+dstr(a.start)+' → '+dstr(a.end)+'</p></td></tr>'+
-      '<tr><th><p>Sprint Constraints</p></th><td>'+nl2p(agrVal('constraints'))+'</td></tr>'+
-      '<tr><th><p>Risks</p></th><td>'+nl2p(agrVal('risks'))+'</td></tr>'+
-      '<tr><th><p>Validations</p></th><td>'+nl2p(agrVal('validations'))+'</td></tr>'+
-      '</tbody></table>';
-    body+='<h3>Sprint Health (Day '+a.day+'/'+WORKDAYS+')</h3><table data-layout="default"><tbody>'+
-      '<tr><th><p>Metric</p></th><th><p>Value</p></th><th><p>Status</p></th></tr>'+
-      '<tr><td><p><strong>Scope SP</strong></p></td><td><p>'+fmtSP(a.badgeScope)+' SP ('+(a.todoN+a.inprogN+a.doneN)+' issues)</p></td><td><p>—</p></td></tr>'+
-      '<tr><td><p><strong>Completed SP</strong></p></td><td><p>'+fmtSP(a.doneSP)+' SP</p></td><td><p>'+confStatus(pSP,a.day)+'</p></td></tr>'+
-      '<tr><td><p><strong>Remaining SP</strong></p></td><td><p>'+fmtSP(a.remaining)+' SP ('+a.todoN+' to do · '+a.inprogN+' in progress)</p></td><td><p>—</p></td></tr>'+
-      '<tr><td><p><strong>Sprint progress (by issues)</strong></p></td><td><p>'+pIss+'% ('+a.doneN+'/'+(a.todoN+a.inprogN+a.doneN)+')</p></td><td><p>'+confStatus(pIss,a.day)+'</p></td></tr>'+
-      (()=>{const pd=pct(a.doneSP,a.badgeScope), pi2=pct(a.inprogSP,a.badgeScope), pn=Math.max(0,100-pd-pi2);
-        return '<tr><td><p><strong>Sprint progress (by SP)</strong></p></td><td><p><span data-type="status" data-color="green">'+pd+'% done</span> <span data-type="status" data-color="blue">'+pi2+'% in progress</span> <span data-type="status" data-color="neutral">'+pn+'% not started</span></p></td><td><p>mirrors Jira’s gadget</p></td></tr>';})()+
-      (a.cancSP>0?'<tr><td><p><strong>Cancelled (out of scope)</strong></p></td><td><p>'+fmtSP(a.cancSP)+' SP ('+a.cancN+' issues in CANCEL-type statuses)</p></td><td><p><span data-type="status" data-color="neutral">excluded</span></p></td></tr>':'')+
-      '</tbody></table>';
-    body+='<h3>Burndown — '+sq.code+' '+esc(sprintLabel(a))+'</h3>'+
-      '<p>Scope: '+fmtSP(a.badgeScope)+' SP · Ideal pace: '+fmtSP(a.badgeScope/WORKDAYS)+' SP/day</p>'+
-      '<table data-layout="default"><tbody><tr><th><p>Day</p></th><th><p>Ideal (SP remaining)</p></th><th><p>Actual (SP remaining)</p></th><th><p>Difference</p></th></tr>'+
-      '<tr><td><p>Start</p></td><td><p>'+fmtSP(a.badgeScope)+'</p></td><td><p>'+fmtSP(a.badgeScope)+'</p></td><td><p>—</p></td></tr>'+
-      '<tr><td><p><strong>Day '+a.day+' (today)</strong></p></td><td><p>'+idealRem+'</p></td><td><p><strong>'+fmtSP(a.remaining)+'</strong></p></td><td><p><strong>'+diffTxt+'</strong></p></td></tr>'+
-      '<tr><td><p>Day 15</p></td><td><p>0</p></td><td><p>—</p></td><td><p>—</p></td></tr></tbody></table>'+
-      '<p><a href="'+boardUrl(sq)+'">↗ Open Sprint Insights in Jira ('+sq.code+') — Sprint progress + Burndown</a></p>';
-    if(a.day>3 && pSP < Math.round(a.day/WORKDAYS*100)*0.4){
-      body+='<div data-type="panel-warning"><p><strong>Attention:</strong> '+sq.name+' is significantly behind the ideal burndown ('+pSP+'% SP done on day '+a.day+'). Re-prioritization recommended.</p></div>';
-    }
-  }
-  body+='<hr /><h2>Consolidated — All Squads</h2><table data-layout="default"><tbody><tr><th><p>Squad</p></th><th><p>Scope</p></th><th><p>Completed</p></th><th><p>Remaining</p></th><th><p>% SP Done</p></th><th><p>% issues Done</p></th><th><p>Trend vs ideal</p></th></tr>';
-  for(const sq of SQUADS){
-    const a=DATA[sq.code].active; if(!a) continue;
-    const idealRem=+(a.badgeScope*(1-a.day/WORKDAYS)).toFixed(1);
-    const diff=+(a.remaining-idealRem).toFixed(1);
-    body+='<tr><td><p><strong>'+sq.name+'</strong></p></td><td><p>'+fmtSP(a.badgeScope)+'</p></td><td><p>'+fmtSP(a.doneSP)+'</p></td><td><p>'+fmtSP(a.remaining)+'</p></td><td><p>'+confStatus(pct(a.doneSP,a.badgeScope),a.day)+'</p></td><td><p>'+confStatus(pct(a.doneN,a.todoN+a.inprogN+a.doneN),a.day)+'</p></td><td><p>'+(diff>0.5?'+'+diff+' SP behind':(diff<-0.5?Math.abs(diff)+' SP ahead':'on track'))+'</p></td></tr>';
-  }
-  body+='</tbody></table>';
-  // ---- Comparative Map — Sprint History (closed sprints + current) ----
-  body+='<hr /><h2>Comparative Map — Sprint History (per squad)</h2>';
-  body+='<p>All sprints of each board, including closed ones. Closed sprints use the <strong>official numbers from the sprint reports</strong> (Jira badges read at the time); values marked with “≈” are reconstructed from current Jira fields (which do not preserve the sprint-time snapshot). Active sprint: live read, excluding sub-tasks and cancelled issues.</p>';
-  for(const sq of SQUADS){
-    const d=DATA[sq.code], list=d.sprints;
-    if(!list.length) continue;
-    const scopeOfC=s=>s.state==='active'?s.badgeScope:(s.scopeUnknown?null:s.scope);
-    const mkC=s=>s.state==='closed'?(s.official?'':' ≈'):'';
-    const closed=list.filter(s=>s.state==='closed');
-    const avgDel=closed.length?closed.reduce((x,s)=>x+s.delivered,0)/closed.length:0;
-    body+='<h3>'+sq.name+' ('+sq.code+')</h3>';
-    body+='<table data-layout="default"><tbody><tr><th><p>Metric</p></th>'+list.map(s=>'<th><p>'+esc(sprintLabel(s))+(s.state==='active'?' (current)':'')+'<br/>'+(s.start?ddmm(s.start):'')+'–'+(s.end?ddmm(s.end):'')+'</p></th>').join('')+'</tr>';
-    body+='<tr><td><p><strong>Scope SP</strong></p></td>'+list.map((s,i)=>{
-      const prev=list[i-1]; const v=scopeOfC(s), pv=prev?scopeOfC(prev):null;
-      const g=(pv>0&&v!=null)?Math.round((v-pv)/pv*100):null;
-      return '<td><p>'+(v!=null?fmtSP(v):'—')+mkC(s)+(g!==null?' ('+(g>0?'+':'')+g+'%)':'')+'</p></td>';}).join('')+'</tr>';
-    body+='<tr><td><p><strong>Delivered SP</strong></p></td>'+list.map(s=>'<td><p>'+(s.state==='active'?fmtSP(s.doneSP)+' (Day '+(s.day||'—')+')':fmtSP(s.delivered)+mkC(s))+'</p></td>').join('')+'</tr>';
-    body+='<tr><td><p><strong>Delivery rate (SP)</strong></p></td>'+list.map(s=>{
-      const sc=scopeOfC(s);
-      if(s.state!=='active'&&sc==null) return '<td><p>—</p></td>';
-      const p=s.state==='active'?pct(s.doneSP,s.badgeScope):pct(s.delivered,sc);
-      const c=s.state==='active'?'blue':(p>=60?'green':(p>=30?'yellow':'red'));
-      return '<td><p><span data-type="status" data-color="'+c+'">'+p+'%'+(s.state==='active'?' partial':'')+'</span></p></td>';}).join('')+'</tr>';
-    body+='<tr><td><p><strong>Volume (cards)</strong></p></td>'+list.map(s=>'<td><p>'+(s.count?s.count+mkC(s):'—')+'</p></td>').join('')+'</tr>';
-    body+='<tr><td><p><strong>Issues done</strong></p></td>'+list.map(s=>{
-      const tot=s.state==='active'?(s.todoN+s.inprogN+s.doneN):(s.issuesTotal||s.count);
-      const dn=s.state==='active'?s.doneN:s.doneCount;
-      if(!tot) return '<td><p>—</p></td>';
-      return '<td><p>'+pct(dn,tot)+'% ('+dn+'/'+tot+')'+mkC(s)+'</p></td>';}).join('')+'</tr>';
-    body+='<tr><td><p><strong>Cancelled SP (out of scope)</strong></p></td>'+list.map(s=>'<td><p>'+(s.cancSP>0?fmtSP(s.cancSP)+' ('+s.cancN+')':'—')+'</p></td>').join('')+'</tr>';
-    body+='<tr><td><p><strong>Sprint Goal</strong></p></td>'+list.map(s=>'<td><p>'+esc((s.goal||'—').split('\n')[0].slice(0,140))+'</p></td>').join('')+'</tr>';
-    body+='</tbody></table>';
-    const a=d.active;
-    if(closed.length){
-      body+='<p>Average delivered across '+closed.length+' closed sprint(s): <strong>'+fmtSP(avgDel)+' SP</strong>'+(a?' · current scope: <strong>'+fmtSP(a.badgeScope)+' SP</strong>':'')+'</p>';
-      if(a && avgDel>0 && a.badgeScope>avgDel*1.3){
-        body+='<div data-type="panel-warning"><p><strong>Overcommit risk:</strong> '+sq.name+' current scope ('+fmtSP(a.badgeScope)+' SP) is ~'+Math.round((a.badgeScope/avgDel-1)*100)+'% above the historical delivered average ('+fmtSP(avgDel)+' SP).</p></div>';
-      }
-    }
-    // Team performance — Dev/QA × Sprint matrix (delivered per sprint + live final average)
-    if(d.devs&&d.devs.length){
-      const closedCnt=list.filter(s=>s.state==='closed'&&!String(s.id).startsWith('bl-')).length;
-      const realS=list.filter(s=>!String(s.id).startsWith('bl-'));
-      body+='<p><strong>Deliveries per Dev/QA × Sprint</strong> — per sprint: delivered SP · tasks (attributed to the sprint where the issue was completed), with allocation below. <strong>Final average</strong> = delivered ÷ '+closedCnt+' closed sprint(s) participated — recalculated live as each sprint closes. Sub-tasks and cancelled excluded; reconstructed from current Jira fields (≈).</p>';
-      body+='<table data-layout="default"><tbody><tr><th><p>Dev / QA</p></th>'+realS.map(s=>'<th><p>'+esc(sprintLabel(s))+(s.state==='active'?' (current)':'')+'</p></th>').join('')+'<th><p>Final avg / sprint</p></th></tr>'+
-        d.devs.map(v=>'<tr><td><p><strong>'+esc(v.name)+'</strong></p></td>'+
-          realS.map(s=>{
-            const b=(v.by||{})[s.id];
-            if(!b||(!b.aN&&!b.dN)) return '<td><p>—</p></td>';
-            return '<td><p><strong>'+fmtSP(b.dSP)+' SP</strong> · '+b.dN+' tasks</p><p><em>alloc. '+fmtSP(b.aSP)+' SP · '+b.aN+'</em></p></td>';
-          }).join('')+
-          '<td><p><strong>'+fmtSP(Math.round(v.avgSP*100)/100)+' SP</strong> · '+(Math.round(v.avgN*10)/10)+' tasks ('+v.partN+' spr.)</p></td></tr>').join('')+
-        '</tbody></table>';
-    }
-  }
-  // ---- Carryover — Inherited from the previous sprint ----
-  body+='<hr /><h2>Carryover — Inherited From the Previous Sprint (per squad)</h2>';
-  body+='<p>Issues (sub-tasks and cancelled excluded) present in the previous sprint AND in the following one, with current SP values. For the <strong>active sprint</strong>, the breakdown shows the current status of each inherited issue — early in the sprint, this is the status it migrated in. Jira does not preserve the handover status for closed sprints.</p>';
-  for(const sq of SQUADS){
-    const d=DATA[sq.code], list=d.sprints;
-    if(list.length<2) continue;
-    body+='<h3>'+sq.name+' ('+sq.code+')</h3>';
-    body+='<table data-layout="default"><tbody><tr><th><p>Transition</p></th><th><p>Issues carried</p></th><th><p>SP carried</p></th><th><p>% of sprint scope</p></th></tr>';
-    for(let i=1;i<list.length;i++){
-      const prev=list[i-1], s=list[i];
-      const lbl=sprintLabel(prev)+' → '+sprintLabel(s)+(s.state==='active'?' (current)':'');
-      if(s.carryNA||s.carryN==null){ body+='<tr><td><p>'+lbl+'</p></td><td><p>—</p></td><td><p>—</p></td><td><p>—</p></td></tr>'; continue; }
-      const sc=s.state==='active'?s.badgeScope:(s.scopeUnknown?null:s.scope);
-      const p=sc?pct(s.carrySP,sc):null;
-      const mkT=s.state==='closed'?' ≈':'';
-      body+='<tr><td><p>'+lbl+'</p></td><td><p>'+s.carryN+'</p></td><td><p>'+fmtSP(s.carrySP)+mkT+'</p></td><td><p>'+(p!==null?'<span data-type="status" data-color="'+(p>40?'red':(p>20?'yellow':'green'))+'">'+p+'%'+mkT+'</span>':'—')+'</p></td></tr>';
-    }
-    body+='</tbody></table>';
-    const a=d.active;
-    if(a&&a.carryByStatus&&Object.keys(a.carryByStatus).length){
-      const entries=Object.entries(a.carryByStatus).sort((x,y)=>y[1].sp-x[1].sp);
-      body+='<p><strong>Carryover status — '+esc(sprintLabel(a))+' (Day '+a.day+')</strong></p>';
-      body+='<table data-layout="default"><tbody><tr><th><p>Status</p></th><th><p>Issues</p></th><th><p>SP</p></th><th><p>% of carried SP</p></th></tr>'+
-        entries.map(([st,v])=>'<tr><td><p><span data-type="status" data-color="'+(/conclu|done/i.test(st)?'green':(/pend|block|reject|wait/i.test(st)?'yellow':'blue'))+'">'+esc(st)+'</span></p></td><td><p>'+v.n+'</p></td><td><p>'+fmtSP(v.sp)+'</p></td><td><p>'+pct(v.sp,a.carrySP)+'%</p></td></tr>').join('')+
-        '<tr><td><p><strong>Total</strong></p></td><td><p><strong>'+a.carryN+'</strong></p></td><td><p><strong>'+fmtSP(a.carrySP)+'</strong></p></td><td><p><strong>100%</strong></p></td></tr></tbody></table>';
-      if(a.carrySP>0&&a.badgeScope>0&&a.carrySP/a.badgeScope>0.4){
-        body+='<div data-type="panel-warning"><p><strong>High inheritance:</strong> '+pct(a.carrySP,a.badgeScope)+'% of '+sq.name+'’s current scope comes from the previous sprint — review whether these items are still priority before adding new scope.</p></div>';
-      }
-    }
-  }
-  body+='<p><em>Source: Jira boards via JQL — SP by status category (To Do + In Progress + Done), sub-tasks and cancelled issues excluded, read on '+dstr(today)+'. Burndown ideal projected over '+WORKDAYS+' working days; actuals shown for Start and the current day. Note: Jira’s on-board “Sprint progress” gadget may differ slightly on boards that display sub-task cards (e.g. AE). Generated from the Weekly Product Hub artifact.</em></p>';
-  const title='Sprint Plan — Engineering Squads | '+sprintN+' · '+ddmm(a0.start)+' ~ '+ddmmyyyy(a0.end)+' (gen. '+String(today.getDate()).padStart(2,'0')+' '+MONTHS_EN[today.getMonth()]+' '+String(today.getHours()).padStart(2,'0')+':'+String(today.getMinutes()).padStart(2,'0')+')';
-  return {title, body};
-}
-
-async function ensureMonthFolder(){
-  const today=new Date();
-  const want=MONTHS_PT[today.getMonth()]+'/'+today.getFullYear();
-  const d=parseResult(await window.cowork.callMcpTool(T_DESC,{cloudId:CLOUD,pageId:OKRS_PAGE,depth:5,limit:200}));
-  const nodes=d.results||d.nodes||[];
-  const found=nodes.find(n=>n.parentId===WPM_FOLDER && (n.title||'').trim()===want);
-  if(found) return {id:found.id, created:false, name:want};
-  const c=parseResult(await window.cowork.callMcpTool(T_CREATE,{cloudId:CLOUD,spaceId:SPACE_ID,parentId:WPM_FOLDER,title:want,contentFormat:'html',body:'<p>Weekly Product Meeting — '+want+'</p>'}));
-  const id=(c.page&&c.page.id)||c.id||(c.content&&c.content.id);
-  return {id, created:true, name:want};
-}
-
-async function criarWeekly(){
-  const btn=document.getElementById('btnWeekly'), st=document.getElementById('ctaStatus');
-  btn.disabled=true;
-  try{
-    st.textContent='1/3 · Localizando pasta do mês…';
-    const folder=await ensureMonthFolder();
-    console.log('[weekly-hub] month folder',JSON.stringify(folder));
-    st.textContent='2/3 · Gerando conteúdo ('+folder.name+(folder.created?' · criada':'')+')…';
-    const {title,body}=buildConfluenceBody();
-    st.textContent='3/3 · Publicando página no Confluence…';
-    const r=parseResult(await window.cowork.callMcpTool(T_CREATE,{cloudId:CLOUD,spaceId:SPACE_ID,parentId:String(folder.id),title,contentFormat:'html',body}));
-    console.log('[weekly-hub] createConfluencePage result keys:',Object.keys(r||{}));
-    const pg=r.page||r.content||r;
-    const id=pg.id||'';
-    let url=(pg._links&&(pg._links.base||'https://shippify.atlassian.net/wiki')+pg._links.webui)||'';
-    if(!url&&pg.webUrl) url=pg.webUrl;
-    if(!url&&id) url='https://shippify.atlassian.net/wiki/spaces/Products/pages/'+id;
-    st.innerHTML='✅ Weekly criada em <strong>'+esc(folder.name)+'</strong>'+(folder.created?' (pasta nova)':'')+' — '+(url?'<a href="'+url+'" target="_blank">abrir página no Confluence ↗</a>':'publicada com sucesso');
-  }catch(e){
-    console.error('[weekly-hub] criarWeekly error',e);
-    st.innerHTML='❌ Falha ao criar a Weekly: '+esc(e.message||e);
-  }finally{ btn.disabled=false; }
-}
-
 /* ---------- boot ---------- */
 function showView(v){
   localStorage.setItem('wh_view',v);
@@ -836,59 +670,31 @@ function showView(v){
   if(DATA){ if(v==='plan') renderPlan(); else {renderMapTabs();renderMap();} }
 }
 document.querySelectorAll('#viewTabs button').forEach(b=>b.onclick=()=>showView(b.dataset.view));
-document.getElementById('btnRefresh').onclick=()=>location.reload();
 
-/* ---------- Exportar site estático (GitHub Pages) ---------- */
-function exportStatic(){
-  // Garante as duas visões renderizadas (o export é um snapshot do DOM)
-  renderPlan(); renderMapTabs(); renderMap();
-  const clone=document.documentElement.cloneNode(true);
-  // canvases (Chart.js) viram imagens
-  const live=document.querySelectorAll('canvas'), cl=clone.querySelectorAll('canvas');
-  live.forEach((c,i)=>{ if(!cl[i])return; const img=document.createElement('img');
-    try{img.src=c.toDataURL('image/png');}catch(e){}
-    img.style.cssText='width:100%;max-height:300px;object-fit:contain'; cl[i].replaceWith(img); });
-  // textareas viram texto fixo
-  document.querySelectorAll('textarea[data-key]').forEach((t,i)=>{
-    const ct=clone.querySelectorAll('textarea[data-key]')[i]; if(!ct)return;
-    const dv=document.createElement('div'); dv.style.cssText='white-space:pre-line;font-size:12.5px';
-    dv.textContent=t.value||'—'; ct.replaceWith(dv); });
-  // remove scripts, botões de ação e mostra as duas visões empilhadas
-  clone.querySelectorAll('script').forEach(s=>s.remove());
-  const vp=clone.querySelector('#viewPlan'), vm=clone.querySelector('#viewMap');
-  if(vp)vp.classList.remove('hidden'); if(vm)vm.classList.remove('hidden');
-  const cta=clone.querySelector('.cta'); if(cta)cta.remove();
-  const tabs=clone.querySelector('#viewTabs'); if(tabs)tabs.remove();
-  const now=new Date();
-  const stamp=ddmm(now)+'/'+now.getFullYear()+' '+String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
-  const banner=clone.querySelector('#subtitle');
-  if(banner) banner.outerHTML='<p class="subtitle">📌 Snapshot estático gerado em <strong>'+stamp+'</strong> a partir do Jira. '+
-    '<span style="color:var(--amarelo)">🔄 Recalcular:</span> abra o Weekly Product Hub no Cowork (dados vivos), clique em Exportar e substitua o index.html no GitHub — republica sozinho em ~1 min.</p>';
-  const blob=new Blob(['<!DOCTYPE html>\n'+clone.outerHTML],{type:'text/html'});
-  const aEl=document.createElement('a');
-  aEl.href=URL.createObjectURL(blob); aEl.download='index.html'; aEl.click();
-  URL.revokeObjectURL(aEl.href);
-  document.getElementById('ctaStatus').innerHTML='✅ <strong>index.html</strong> baixado. Publicar: github.com → New repository (Public) → Add file → Upload files → arrasta o index.html → Commit → Settings → Pages → Deploy from branch (main/root). Site em https://[usuário].github.io/[repo]/ em 1-2 min.';
-}
-
-
-(async function(){
+async function boot(){
+  const loading=document.getElementById('loading'), eb=document.getElementById('errBox');
+  eb.classList.add('hidden');
+  loading.classList.remove('hidden');
+  document.getElementById('btnRefresh').disabled=true;
   try{
-    DATA=await loadAll();
-    document.getElementById('loading').classList.add('hidden');
-    const now=new Date();
+    DATA=await loadAll();   // fetch data.json com cache-bust — sempre a última versão publicada
+    loading.classList.add('hidden');
     const anyA=SQUADS.map(s=>DATA[s.code].active).find(Boolean);
-    document.getElementById('subtitle').textContent=(anyA?sprintLabel(anyA)+' · Day '+anyA.day+' of '+WORKDAYS+' · ':'')+'Dados do Jira gerados em '+(window.__GEN__?new Date(window.__GEN__).toLocaleString('pt-BR'):'—')+' (GitHub Actions)';
-    document.getElementById('footer').innerHTML='<strong>Método (precisão):</strong> JQL <code>project = X AND sprint is not EMPTY AND issuetype NOT IN subtaskIssueTypes()</code> · SP = Story Points (customfield_10028) somados por status category. <strong>Issues em statuses CANCEL (categoria “done” no Jira) são excluídas do scope e nunca contam como entrega</strong> — correção necessária p.ex. na AE, onde 26 issues canceladas (65.5 SP) inflavam o Completed. Sprints <strong>fechadas</strong> usam baselines oficiais dos reports validados (badges lidos na época) — os campos atuais do Jira não preservam a foto da sprint; valores sem baseline aparecem com “≈” (reconstruídos). Obs.: o gadget “Progresso do sprint” do Jira pode divergir levemente em boards que exibem subtarefas como cards (AE). Boards: AE 479 · OE 474 · EE 475. Use o Reload do cabeçalho para atualizar.';
+    const gen=window.__GEN__?new Date(window.__GEN__).toLocaleString('pt-BR'):'—';
+    document.getElementById('subtitle').textContent=(anyA?sprintLabel(anyA)+' · Day '+anyA.day+' of '+WORKDAYS+' · ':'')+'Dados do Jira gerados em '+gen+' (GitHub Actions, a cada 3h)';
+    document.getElementById('footer').innerHTML='<strong>Método (precisão):</strong> JQL <code>project = X AND sprint is not EMPTY AND issuetype NOT IN subtaskIssueTypes()</code> · SP = campo <strong>Story Points</strong> (customfield_10028), que <strong>já é a somatória DEV + QA</strong> da história/tarefa/bug (validado: Story Points = Story point total (dev, cf 10548) + Story point QA (cf 10546)), somados por status category, sem subtarefas nas 3 squads. Linha 🧪 QA do Desempenho por Dev/QA: campo <strong>Story point QA</strong> — a issue é atribuída ao QA quando entra nos status de QA (PENDING QA = não iniciado; ON TESTING/ON GOING QA · QA VERIFIED/APPROVED BY QA · QA DENIED/REJECTED BY QA = em andamento); entregue só em DONE; issues em dev não contam para o QA. <strong>Issues em statuses CANCEL (categoria “done” no Jira) são excluídas do scope e nunca contam como entrega</strong>. Sprints <strong>fechadas</strong> usam baselines oficiais dos reports validados (badges lidos na época); valores sem baseline aparecem com “≈” (reconstruídos). Boards: AE 479 · OE 474 · EE 475. <strong>🔄 Atualizar dados</strong> recarrega o último data.json publicado; para regenerar do Jira agora, use “Run workflow” no link acima (leva ~1 min).';
     showView(localStorage.getItem('wh_view')||'plan');
   }catch(e){
     console.error('[weekly-hub] load error',e);
-    document.getElementById('loading').classList.add('hidden');
-    const eb=document.getElementById('errBox');
+    loading.classList.add('hidden');
     eb.classList.remove('hidden');
-    eb.textContent='Erro ao carregar dados do Jira: '+(e.message||e)+' — use o Reload do cabeçalho para tentar novamente.';
+    eb.textContent='Erro ao carregar dados: '+(e.message||e)+' — clique em 🔄 Atualizar dados para tentar novamente.';
+  }finally{
+    document.getElementById('btnRefresh').disabled=false;
   }
-})();
+}
+document.getElementById('btnRefresh').onclick=()=>boot();
+boot();
 </script>
 </body>
 </html>
