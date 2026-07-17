@@ -88,8 +88,8 @@
       <p class="subtitle" id="subtitle">Carregando dados do Jira…</p>
     </div>
     <div class="cta">
-      <button class="btn-refresh" id="btnRefresh" disabled title="Dispara o workflow Update data (que consulta o Jira com o token configurado) e recarrega sozinho quando os dados novos publicarem">🔄 Atualizar dados</button>
-      <div class="cta-status" id="ctaStatus">🔄 consulta o Jira em tempo real via GitHub Actions (token configurado no repositório) · <a href="https://github.com/Lousada-Shippify/shippify-weekly-squads-team/actions/workflows/update-data.yml" target="_blank">ver execuções</a></div>
+      <button class="btn-refresh" id="btnRefresh" disabled title="Recarrega os dados mais recentes — o Jira é reconsultado automaticamente a cada 10 minutos">🔄 Atualizar dados</button>
+      <div class="cta-status" id="ctaStatus">O Jira é consultado automaticamente a cada 10 min (GitHub Actions, token configurado no repositório) · <a href="https://github.com/Lousada-Shippify/shippify-weekly-squads-team/actions/workflows/update-data.yml" target="_blank">ver execuções</a></div>
     </div>
   </header>
 
@@ -681,8 +681,8 @@ async function boot(){
     loading.classList.add('hidden');
     const anyA=SQUADS.map(s=>DATA[s.code].active).find(Boolean);
     const gen=window.__GEN__?new Date(window.__GEN__).toLocaleString('pt-BR'):'—';
-    document.getElementById('subtitle').textContent=(anyA?sprintLabel(anyA)+' · Day '+anyA.day+' of '+WORKDAYS+' · ':'')+'Dados do Jira gerados em '+gen+' · auto a cada 30 min · 🔄 consulta agora';
-    document.getElementById('footer').innerHTML='<strong>Método (precisão):</strong> JQL <code>project = X AND sprint is not EMPTY AND issuetype NOT IN subtaskIssueTypes()</code> · SP = campo <strong>Story Points</strong> (customfield_10028), que <strong>já é a somatória DEV + QA</strong> da história/tarefa/bug (validado: Story Points = Story point total (dev, cf 10548) + Story point QA (cf 10546)), somados por status category, sem subtarefas nas 3 squads. Linha 🧪 QA do Desempenho por Dev/QA: campo <strong>Story point QA</strong> — a issue é atribuída ao QA quando entra nos status de QA (PENDING QA = não iniciado; ON TESTING/ON GOING QA · QA VERIFIED/APPROVED BY QA · QA DENIED/REJECTED BY QA = em andamento); entregue só em DONE; issues em dev não contam para o QA. <strong>Issues em statuses CANCEL (categoria “done” no Jira) são excluídas do scope e nunca contam como entrega</strong>. Sprints <strong>fechadas</strong> usam baselines oficiais dos reports validados (badges lidos na época); valores sem baseline aparecem com “≈” (reconstruídos). Boards: AE 479 · OE 474 · EE 475. <strong>🔄 Atualizar dados</strong> consulta o Jira em tempo real: dispara o workflow Update data (token do Jira nos secrets do repositório) e re-renderiza sozinho quando o data.json novo publica (~1-2 min); além disso os dados se regeneram automaticamente a cada 30 min.';
+    document.getElementById('subtitle').textContent=(anyA?sprintLabel(anyA)+' · Day '+anyA.day+' of '+WORKDAYS+' · ':'')+'Dados do Jira gerados em '+gen+' · reconsultado automaticamente a cada 10 min';
+    document.getElementById('footer').innerHTML='<strong>Método (precisão):</strong> JQL <code>project = X AND sprint is not EMPTY AND issuetype NOT IN subtaskIssueTypes()</code> · SP = campo <strong>Story Points</strong> (customfield_10028), que <strong>já é a somatória DEV + QA</strong> da história/tarefa/bug (validado: Story Points = Story point total (dev, cf 10548) + Story point QA (cf 10546)), somados por status category, sem subtarefas nas 3 squads. Linha 🧪 QA do Desempenho por Dev/QA: campo <strong>Story point QA</strong> — a issue é atribuída ao QA quando entra nos status de QA (PENDING QA = não iniciado; ON TESTING/ON GOING QA · QA VERIFIED/APPROVED BY QA · QA DENIED/REJECTED BY QA = em andamento); entregue só em DONE; issues em dev não contam para o QA. <strong>Issues em statuses CANCEL (categoria “done” no Jira) são excluídas do scope e nunca contam como entrega</strong>. Sprints <strong>fechadas</strong> usam baselines oficiais dos reports validados (badges lidos na época); valores sem baseline aparecem com “≈” (reconstruídos). Boards: AE 479 · OE 474 · EE 475. <strong>🔄 Atualizar dados</strong> recarrega os dados mais recentes — o Jira é reconsultado automaticamente a cada 10 min pelo workflow Update data (token do Jira nos secrets do repositório), então o dado exibido tem no máximo ~10-15 min.';
     showView(localStorage.getItem('wh_view')||'plan');
   }catch(e){
     console.error('[weekly-hub] load error',e);
@@ -705,12 +705,20 @@ const REPO_API='https://api.github.com/repos/Lousada-Shippify/shippify-weekly-sq
 const ACTIONS_URL='https://github.com/Lousada-Shippify/shippify-weekly-squads-team/actions/workflows/update-data.yml';
 async function regenerar(){
   const st=document.getElementById('ctaStatus'), btn=document.getElementById('btnRefresh');
-  let t=localStorage.getItem('wh_gh_token');
+  // Sem token: recarrega o último data.json publicado (o Jira é reconsultado automaticamente
+  // a cada 10 min pelo Actions, então o dado tem no máximo ~10-15 min).
+  // Com token salvo neste navegador (localStorage 'wh_gh_token' — opcional, para power users):
+  // dispara o workflow agora e re-renderiza quando o dado novo publicar.
+  const t=localStorage.getItem('wh_gh_token');
   if(!t){
-    t=prompt('Para consultar o Jira em tempo real, cole um GitHub token (fine-grained, apenas este repositório, permissão "Actions: Read and write").\n\nEle fica salvo SÓ neste navegador e dispara o workflow Update data, que usa o token do Jira já configurado no repositório.\n\nCancelar = apenas recarregar o último data.json publicado.');
-    if(t){ t=t.trim(); if(t) localStorage.setItem('wh_gh_token',t); }
+    btn.disabled=true;
+    try{
+      await boot();
+      const gen=window.__GEN__?new Date(window.__GEN__).toLocaleTimeString('pt-BR'):'—';
+      st.innerHTML='✅ Dados recarregados — última consulta ao Jira às '+gen+' (automática a cada 10 min)';
+    }finally{ btn.disabled=false; }
+    return;
   }
-  if(!t){ await boot(); return; }
   const before=window.__GEN__||null;
   btn.disabled=true;
   try{
