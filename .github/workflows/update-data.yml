@@ -1,7 +1,7 @@
 name: Update data
 on:
   schedule:
-            - cron: '*/10 * * * *'
+    - cron: '17 * * * *' # Fallback horário — a atualização em tempo real é via proxy serverless (botão Atualizar dados)
   workflow_dispatch:
 permissions:
   contents: write
