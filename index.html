@@ -295,22 +295,14 @@ function processSquad(sq, nodes, report){
   if(active){
     active.badgeScope=active.todoSP+active.inprogSP+active.doneSP;
     active.remaining=active.todoSP+active.inprogSP;
-    // Fonte da verdade: quando o relatório oficial de sprint do Jira (mesmo endpoint que alimenta
-    // os widgets nativos "Progresso do sprint"/"Burndown" do board) está disponível, os números
-    // de Scope/Completed/Remaining SP e a contagem de issues passam a vir DIRETO dele — sem
-    // recálculo nosso — garantindo paridade exata com o que aparece no Jira. As quebras por
-    // dev/QA, épico e carryover continuam vindas do JQL detalhado (o Jira não oferece isso nativamente).
-    if(report){
-      active.badgeScope=report.scopeSP;
-      active.doneSP=report.completedSP;
-      active.todoSP=report.todoSP;
-      active.inprogSP=report.inprogSP;
-      active.remaining=active.todoSP+active.inprogSP;
-      active.doneN=report.doneN;
-      active.todoN=report.todoN;
-      active.inprogN=report.inprogN;
-      active.jiraSourced=true;
-    }
+    // TESTADO E REVERTIDO (20/07/2026): o endpoint "oficial" de relatório de sprint do Jira
+    // (greenhopper/sprintreport, mesma fonte do Burndown nativo) usa uma FOTO desatualizada dos
+    // pontos — quando testado ao vivo, AE aparecia com 1,25 SP concluído/42,75 SP de escopo,
+    // contra o real de 64+ SP concluído/81 SP de escopo (confirmado issue a issue via JQL). OE e
+    // EE bateram por coincidência, mas AE provou que essa fonte não é confiável em tempo real —
+    // por isso NÃO usamos mais `report` para sobrescrever os números; o cálculo via JQL abaixo
+    // (que já bate com o widget "Progresso do sprint" ao vivo do Jira) é a fonte da verdade.
+    void report;
     active.day=workdayIndex(active.start,new Date());
     // Main deliveries: agrupa cards da sprint ativa por épico (parent) ou tag [XXX] do summary
     const acts=recs.filter(r=>!r.cancelled&&r.ids.includes(active.id));
@@ -499,7 +491,7 @@ function renderPlan(){
       ? a.doneList.slice(0,10).map(t=>'<div class="deliv">✅ <strong>'+esc(t.key)+'</strong> — '+esc(t.summary.slice(0,90))+' <small style="color:var(--text-secondary)">('+fmtSP(t.sp)+' SP)</small></div>').join('')
         +(a.doneList.length>10?'<small class="brk">… +'+(a.doneList.length-10)+' tarefas</small>':'')
       : '<span style="color:var(--text-secondary)">Nenhuma tarefa concluída ainda nesta sprint.</span>';
-    html+='<div class="squad-block"><h3>'+sq.name+' — '+esc(sprintLabel(a))+' <span class="pill blue">Day '+a.day+'/'+WORKDAYS+'</span>'+(a.jiraSourced?' <span class="pill green" title="Scope/Completed/Remaining vêm do relatório oficial de sprint do Jira">✓ igual ao Jira</span>':'')+'</h3>'+
+    html+='<div class="squad-block"><h3>'+sq.name+' — '+esc(sprintLabel(a))+' <span class="pill blue">Day '+a.day+'/'+WORKDAYS+'</span></h3>'+
       '<h4 style="margin:12px 0 8px;font-size:13px">Sprint Agreements</h4>'+
       '<table class="agr"><tbody>'+
       '<tr><th>Sprint Goal</th><td>'+esc(a.goal||'Sem goal registrado no Jira — defina o goal na sprint do board')+'</td></tr>'+
@@ -731,7 +723,7 @@ async function boot(){
       :(LIVE_ENDPOINT
         ?'⚠️ Proxy indisponível — mostrando o último snapshot de '+gen+' · <a href="'+ACTIONS_URL+'" target="_blank">ver execuções</a>'
         :'Mostrando o último snapshot publicado ('+gen+') · <a href="'+ACTIONS_URL+'" target="_blank">ver execuções</a>');
-    document.getElementById('footer').innerHTML='<strong>Método (precisão):</strong> Scope/Completed/Remaining SP e a % de progresso da sprint ativa vêm <strong>direto do relatório oficial de sprint do Jira</strong> (mesmo endpoint que alimenta os widgets nativos “Progresso do sprint” e “Burndown” do board) — o Jira é a fonte da verdade, sem recálculo nosso. Quando esse relatório não está disponível, caímos de volta para o cálculo via JQL <code>project = X AND sprint is not EMPTY AND issuetype NOT IN subtaskIssueTypes()</code> com SP = campo <strong>Story Points</strong> (customfield_10028). As quebras por <strong>Dev/QA, épico e carryover</strong> (que o Jira não expõe nativamente) continuam calculadas via JQL detalhado: SP = Story Points, já somatória DEV + QA (validado: Story Points = Story point total (dev, cf 10548) + Story point QA (cf 10546)), sem subtarefas nas 3 squads. Linha 🧪 QA do Desempenho por Dev/QA: campo <strong>Story point QA</strong> — a issue é atribuída ao QA quando entra nos status de QA (PENDING QA = não iniciado; ON TESTING/ON GOING QA · QA VERIFIED/APPROVED BY QA · QA DENIED/REJECTED BY QA = em andamento); entregue só em DONE; issues em dev não contam para o QA. Sprints <strong>fechadas</strong> usam baselines oficiais dos reports validados (badges lidos na época); valores sem baseline aparecem com “≈” (reconstruídos). Boards: AE 479 · OE 474 · EE 475. <strong>🔄 Atualizar dados</strong> consulta o Jira agora mesmo em tempo real (proxy serverless, sem exigir login de quem acessa); se o proxy não estiver configurado, mostra o último snapshot gerado pelo workflow Update data (fallback horário).';
+    document.getElementById('footer').innerHTML='<strong>Método (precisão):</strong> JQL <code>project = X AND sprint is not EMPTY AND issuetype NOT IN subtaskIssueTypes()</code> · SP = campo <strong>Story Points</strong> (customfield_10028), que <strong>já é a somatória DEV + QA</strong> da história/tarefa/bug (validado: Story Points = Story point total (dev, cf 10548) + Story point QA (cf 10546)), somados por status category, sem subtarefas nas 3 squads. <strong>Testamos usar o endpoint “oficial” de relatório de sprint do Jira como fonte única e revertemos</strong>: ele usa uma foto desatualizada dos pontos (mesma fonte do Burndown nativo) e chegou a mostrar a AE com 1,25 SP concluído quando o real era 64+ — por isso o cálculo ao vivo via JQL abaixo continua sendo a fonte da verdade (já bate com o widget “Progresso do sprint” do Jira). Linha 🧪 QA do Desempenho por Dev/QA: campo <strong>Story point QA</strong> — a issue é atribuída ao QA quando entra nos status de QA (PENDING QA = não iniciado; ON TESTING/ON GOING QA · QA VERIFIED/APPROVED BY QA · QA DENIED/REJECTED BY QA = em andamento); entregue só em DONE; issues em dev não contam para o QA. <strong>Issues em statuses CANCEL (categoria “done” no Jira) são excluídas do scope e nunca contam como entrega</strong>. Sprints <strong>fechadas</strong> usam baselines oficiais dos reports validados (badges lidos na época); valores sem baseline aparecem com “≈” (reconstruídos). Boards: AE 479 · OE 474 · EE 475. <strong>🔄 Atualizar dados</strong> consulta o Jira agora mesmo em tempo real (proxy serverless, sem exigir login de quem acessa); se o proxy não estiver configurado, mostra o último snapshot gerado pelo workflow Update data (fallback horário).';
     showView(localStorage.getItem('wh_view')||'plan');
   }catch(e){
     console.error('[weekly-hub] load error',e);
