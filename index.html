@@ -88,8 +88,8 @@
       <p class="subtitle" id="subtitle">Carregando dados do Jira…</p>
     </div>
     <div class="cta">
-      <button class="btn-refresh" id="btnRefresh" disabled title="Recarrega os dados mais recentes — o Jira é reconsultado automaticamente a cada 10 minutos">🔄 Atualizar dados</button>
-      <div class="cta-status" id="ctaStatus">O Jira é consultado automaticamente a cada 10 min (GitHub Actions, token configurado no repositório) · <a href="https://github.com/Lousada-Shippify/shippify-weekly-squads-team/actions/workflows/update-data.yml" target="_blank">ver execuções</a></div>
+      <button class="btn-refresh" id="btnRefresh" disabled title="Consulta o Jira agora mesmo (tempo real via proxy) — sem exigir login de quem acessa">🔄 Atualizar dados</button>
+      <div class="cta-status" id="ctaStatus">Carregando…</div>
     </div>
   </header>
 
@@ -118,6 +118,11 @@
 const SP_FIELD = 'customfield_10028';
 const QA_FIELD = 'customfield_10546';
 const SPRINT_FIELD = 'customfield_10020';
+// Proxy serverless (Cloudflare Worker) para consulta ao Jira em tempo real, sem exigir login/token
+// de quem acessa o site. Preencha com a URL pública do Worker depois do deploy
+// (Settings > Variables and Secrets > JIRA_EMAIL / JIRA_API_TOKEN), ex.:
+// 'https://weekly-hub-proxy.SEU-USUARIO.workers.dev'. Vazio = usa só o data.json (fallback).
+const LIVE_ENDPOINT = '';
 // QA de cada squad — os pontos de QA vivem no campo "Story point QA" das histórias/tarefas/bugs.
 // A responsabilidade (assignee) das tarefas NUNCA passa para o QA: a atribuição ao QA acontece
 // quando a issue entra nos status pertinentes a QA. Regra:
@@ -390,12 +395,34 @@ function processSquad(sq, nodes){
   return {squad:sq, sprints:list, active, issueCount:nodes.length, devs, qa:qaRow, review};
 }
 
+// Tenta consultar o Jira agora mesmo via Worker (tempo real). Timeout curto para não travar
+// a página se o Worker não estiver configurado/acessível — nesse caso volta null e cai no fallback.
+async function fetchLive(timeoutMs){
+  if(!LIVE_ENDPOINT) return null;
+  const ctrl=new AbortController();
+  const timer=setTimeout(()=>ctrl.abort(),timeoutMs||12000);
+  try{
+    const r=await fetch(LIVE_ENDPOINT+'?t='+Date.now(),{signal:ctrl.signal,cache:'no-store'});
+    clearTimeout(timer);
+    if(!r.ok) return null;
+    const d=await r.json();
+    if(d.error) return null;
+    return d;
+  }catch(e){ clearTimeout(timer); return null; }
+}
+
 async function loadAll(){
-  document.getElementById('loadingMsg').textContent='Carregando data.json…';
-  const resp=await fetch('data.json?v='+Date.now(),{cache:'no-store'});
-  if(!resp.ok) throw new Error('data.json ainda não foi gerado. No repositório: Settings > Secrets and variables > Actions > cadastre JIRA_EMAIL e JIRA_API_TOKEN, depois Actions > "Update data" > Run workflow.');
-  const raw=await resp.json();
+  document.getElementById('loadingMsg').textContent=LIVE_ENDPOINT?'Consultando o Jira em tempo real…':'Carregando último snapshot…';
+  let raw=await fetchLive();
+  let live=!!raw;
+  if(!raw){
+    if(LIVE_ENDPOINT) document.getElementById('loadingMsg').textContent='Proxy indisponível — carregando último snapshot…';
+    const resp=await fetch('data.json?v='+Date.now(),{cache:'no-store'});
+    if(!resp.ok) throw new Error('Nem o proxy em tempo real nem o data.json de fallback responderam. No repositório: Settings > Secrets and variables > Actions > cadastre JIRA_EMAIL e JIRA_API_TOKEN, depois Actions > "Update data" > Run workflow.');
+    raw=await resp.json();
+  }
   window.__GEN__=raw.generatedAt;
+  window.__LIVE__=live;
   const results={};
   for(const sq of SQUADS){ results[sq.code]=processSquad(sq,(raw.squads&&raw.squads[sq.code])||[]); }
   return results;
@@ -681,8 +708,14 @@ async function boot(){
     loading.classList.add('hidden');
     const anyA=SQUADS.map(s=>DATA[s.code].active).find(Boolean);
     const gen=window.__GEN__?new Date(window.__GEN__).toLocaleString('pt-BR'):'—';
-    document.getElementById('subtitle').textContent=(anyA?sprintLabel(anyA)+' · Day '+anyA.day+' of '+WORKDAYS+' · ':'')+'Dados do Jira gerados em '+gen+' · reconsultado automaticamente a cada 10 min';
-    document.getElementById('footer').innerHTML='<strong>Método (precisão):</strong> JQL <code>project = X AND sprint is not EMPTY AND issuetype NOT IN subtaskIssueTypes()</code> · SP = campo <strong>Story Points</strong> (customfield_10028), que <strong>já é a somatória DEV + QA</strong> da história/tarefa/bug (validado: Story Points = Story point total (dev, cf 10548) + Story point QA (cf 10546)), somados por status category, sem subtarefas nas 3 squads. Linha 🧪 QA do Desempenho por Dev/QA: campo <strong>Story point QA</strong> — a issue é atribuída ao QA quando entra nos status de QA (PENDING QA = não iniciado; ON TESTING/ON GOING QA · QA VERIFIED/APPROVED BY QA · QA DENIED/REJECTED BY QA = em andamento); entregue só em DONE; issues em dev não contam para o QA. <strong>Issues em statuses CANCEL (categoria “done” no Jira) são excluídas do scope e nunca contam como entrega</strong>. Sprints <strong>fechadas</strong> usam baselines oficiais dos reports validados (badges lidos na época); valores sem baseline aparecem com “≈” (reconstruídos). Boards: AE 479 · OE 474 · EE 475. <strong>🔄 Atualizar dados</strong> recarrega os dados mais recentes — o Jira é reconsultado automaticamente a cada 10 min pelo workflow Update data (token do Jira nos secrets do repositório), então o dado exibido tem no máximo ~10-15 min.';
+    const liveTxt=window.__LIVE__?'⚡ tempo real (consultado agora)':'último snapshot ('+gen+')';
+    document.getElementById('subtitle').textContent=(anyA?sprintLabel(anyA)+' · Day '+anyA.day+' of '+WORKDAYS+' · ':'')+'Dados do Jira: '+liveTxt;
+    document.getElementById('ctaStatus').innerHTML=window.__LIVE__
+      ?'⚡ Consultado ao vivo agora às '+new Date(window.__GEN__).toLocaleTimeString('pt-BR')
+      :(LIVE_ENDPOINT
+        ?'⚠️ Proxy indisponível — mostrando o último snapshot de '+gen+' · <a href="'+ACTIONS_URL+'" target="_blank">ver execuções</a>'
+        :'Mostrando o último snapshot publicado ('+gen+') · <a href="'+ACTIONS_URL+'" target="_blank">ver execuções</a>');
+    document.getElementById('footer').innerHTML='<strong>Método (precisão):</strong> JQL <code>project = X AND sprint is not EMPTY AND issuetype NOT IN subtaskIssueTypes()</code> · SP = campo <strong>Story Points</strong> (customfield_10028), que <strong>já é a somatória DEV + QA</strong> da história/tarefa/bug (validado: Story Points = Story point total (dev, cf 10548) + Story point QA (cf 10546)), somados por status category, sem subtarefas nas 3 squads. Linha 🧪 QA do Desempenho por Dev/QA: campo <strong>Story point QA</strong> — a issue é atribuída ao QA quando entra nos status de QA (PENDING QA = não iniciado; ON TESTING/ON GOING QA · QA VERIFIED/APPROVED BY QA · QA DENIED/REJECTED BY QA = em andamento); entregue só em DONE; issues em dev não contam para o QA. <strong>Issues em statuses CANCEL (categoria “done” no Jira) são excluídas do scope e nunca contam como entrega</strong>. Sprints <strong>fechadas</strong> usam baselines oficiais dos reports validados (badges lidos na época); valores sem baseline aparecem com “≈” (reconstruídos). Boards: AE 479 · OE 474 · EE 475. <strong>🔄 Atualizar dados</strong> consulta o Jira agora mesmo em tempo real (proxy serverless, sem exigir login de quem acessa); se o proxy não estiver configurado, mostra o último snapshot gerado pelo workflow Update data (fallback horário).';
     showView(localStorage.getItem('wh_view')||'plan');
   }catch(e){
     console.error('[weekly-hub] load error',e);
@@ -693,62 +726,13 @@ async function boot(){
     document.getElementById('btnRefresh').disabled=false;
   }
 }
-/* ---------- 🔄 Atualizar dados em tempo real ----------
-   O navegador não consegue consultar o Jira diretamente (a Atlassian bloqueia CORS), então o
-   caminho é: disparar o workflow "Update data" (que usa o token do Jira configurado nos secrets
-   do repositório), esperar o data.json novo publicar e re-renderizar sozinho.
-   Para disparar o workflow daqui é preciso um GitHub token (fine-grained, só este repo,
-   permissão Actions: Read and write), colado UMA vez — fica salvo apenas neste navegador
-   (localStorage). Não dá para publicá-lo no repositório: o GitHub revoga automaticamente
-   tokens expostos em repos públicos. Sem token: recarrega o último data.json publicado. */
-const REPO_API='https://api.github.com/repos/Lousada-Shippify/shippify-weekly-squads-team';
+/* ---------- 🔄 Atualizar dados ----------
+   Cada clique chama boot(), que tenta primeiro o proxy serverless (LIVE_ENDPOINT — Cloudflare
+   Worker com o token do Jira guardado como Secret, nunca exposto ao navegador) para uma consulta
+   em tempo real, e só se ele não responder cai para o último data.json publicado pelo GitHub
+   Actions. Sem login, sem token, sem prompt para quem acessa o site. */
 const ACTIONS_URL='https://github.com/Lousada-Shippify/shippify-weekly-squads-team/actions/workflows/update-data.yml';
-async function regenerar(){
-  const st=document.getElementById('ctaStatus'), btn=document.getElementById('btnRefresh');
-  // Sem token: recarrega o último data.json publicado (o Jira é reconsultado automaticamente
-  // a cada 10 min pelo Actions, então o dado tem no máximo ~10-15 min).
-  // Com token salvo neste navegador (localStorage 'wh_gh_token' — opcional, para power users):
-  // dispara o workflow agora e re-renderiza quando o dado novo publicar.
-  const t=localStorage.getItem('wh_gh_token');
-  if(!t){
-    btn.disabled=true;
-    try{
-      await boot();
-      const gen=window.__GEN__?new Date(window.__GEN__).toLocaleTimeString('pt-BR'):'—';
-      st.innerHTML='✅ Dados recarregados — última consulta ao Jira às '+gen+' (automática a cada 10 min)';
-    }finally{ btn.disabled=false; }
-    return;
-  }
-  const before=window.__GEN__||null;
-  btn.disabled=true;
-  try{
-    st.textContent='⚡ 1/2 · Disparando "Update data" (consulta ao Jira)…';
-    const r=await fetch(REPO_API+'/actions/workflows/update-data.yml/dispatches',{
-      method:'POST',
-      headers:{'Authorization':'Bearer '+t,'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','Content-Type':'application/json'},
-      body:JSON.stringify({ref:'main'})});
-    if(r.status===401||r.status===403){ localStorage.removeItem('wh_gh_token'); throw new Error('GitHub token inválido ou sem permissão ('+r.status+') — clique de novo e informe outro token'); }
-    if(r.status!==204) throw new Error('GitHub respondeu '+r.status);
-    const t0=Date.now();
-    while(Date.now()-t0<300000){ // até 5 min (workflow ~20s + publicação do Pages ~1 min)
-      st.textContent='⏳ 2/2 · Jira consultado, aguardando publicação… ('+Math.round((Date.now()-t0)/1000)+'s)';
-      await new Promise(x=>setTimeout(x,12000));
-      try{
-        const d=await (await fetch('data.json?v='+Date.now(),{cache:'no-store'})).json();
-        if(d.generatedAt&&d.generatedAt!==before){
-          await boot();
-          st.innerHTML='✅ Jira consultado agora — dados de '+new Date(d.generatedAt).toLocaleTimeString('pt-BR')+' · <a href="'+ACTIONS_URL+'" target="_blank">ver execução</a>';
-          return;
-        }
-      }catch(e){}
-    }
-    throw new Error('tempo esgotado aguardando a publicação — confira a aba Actions');
-  }catch(e){
-    console.error('[weekly-hub] regenerar error',e);
-    st.innerHTML='❌ '+esc(e.message||e)+' · <a href="'+ACTIONS_URL+'" target="_blank">abrir Actions</a>';
-  }finally{ btn.disabled=false; }
-}
-document.getElementById('btnRefresh').onclick=()=>regenerar();
+document.getElementById('btnRefresh').onclick=()=>boot();
 boot();
 </script>
 </body>

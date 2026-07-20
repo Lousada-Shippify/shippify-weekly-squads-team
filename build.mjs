@@ -1,7 +1,10 @@
 // Weekly Product Hub — data builder
 // Consulta o Jira (REST API v3) e gera data.json consumido pelo index.html.
 // Env: JIRA_EMAIL, JIRA_API_TOKEN (obrigatórios), JIRA_SITE (default shippify.atlassian.net)
-// Executado pelo GitHub Actions (.github/workflows/update-data.yml) a cada 3h ou via Run workflow.
+// Executado pelo GitHub Actions (.github/workflows/update-data.yml) a cada hora, como fallback,
+// ou via Run workflow. A atualização em tempo real acontece direto no navegador, pelo botão
+// 🔄 Atualizar dados, via proxy serverless (Cloudflare Worker) — este script só garante um
+// snapshot recente para quando o proxy ainda não estiver configurado ou estiver fora do ar.
 //
 // Campos de pontos (validados em 17/07/2026):
 //   customfield_10028 "Story Points"   = TOTAL da issue (já é a somatória DEV + QA)
