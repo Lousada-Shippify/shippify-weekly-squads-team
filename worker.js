@@ -26,6 +26,9 @@ const FIELDS = ['status', 'customfield_10028', 'customfield_10546', 'customfield
 // Nenhuma squad pontua subtarefas — os pontos já vêm somados (DEV+QA) no campo Story Points
 // das histórias/tarefas/bugs. Regra igual para AE, OE e EE (confirmado com o time em 20/07/2026).
 const PROJECTS = ['AE', 'OE', 'EE'];
+// Board de cada squad — necessário para puxar o relatório oficial de sprint do Jira (fonte da
+// verdade para Scope/Completed/Remaining SP e % de progresso, pedido em 20/07/2026).
+const BOARD_BY_PROJECT = { AE: 479, OE: 474, EE: 475 };
 
 function corsHeaders(origin) {
   return {
@@ -71,6 +74,44 @@ async function searchAll(auth, jql) {
   }
 }
 
+async function jiraGet(auth, path) {
+  const r = await fetch(`https://${JIRA_SITE}${path}`, {
+    headers: { Authorization: auth, Accept: 'application/json' },
+  });
+  if (!r.ok) throw new Error(`${r.status} ${path} :: ${(await r.text()).slice(0, 300)}`);
+  return r.json();
+}
+
+// Relatório OFICIAL de sprint do Jira — o mesmo endpoint que alimenta os widgets nativos
+// "Progresso do sprint" e "Burndown" no board. Usado como fonte da verdade para Scope/Completed/
+// Remaining SP da sprint ativa, em vez de recalcularmos por conta própria (pedido do time em
+// 20/07/2026, para eliminar qualquer divergência com o que aparece direto no Jira). Endpoint
+// legado (greenhopper) mas estável; se falhar, o front-end cai de volta pro cálculo via JQL.
+async function getSprintReport(auth, boardId) {
+  try {
+    const sprints = await jiraGet(auth, `/rest/agile/1.0/board/${boardId}/sprint?state=active`);
+    const sprint = (sprints.values || [])[0];
+    if (!sprint) return null;
+    const report = await jiraGet(auth, `/rest/greenhopper/1.0/rapid/charts/sprintreport?rapidViewId=${boardId}&sprintId=${sprint.id}`);
+    const c = report.contents || {};
+    const completedSP = c.completedIssuesEstimateSum?.value || 0;
+    const notCompletedSP = c.issuesNotCompletedEstimateSum?.value || 0;
+    let todoSP = 0, inprogSP = 0, todoN = 0, inprogN = 0;
+    for (const it of (c.issuesNotCompletedInCurrentSprint || [])) {
+      const sp = it.currentEstimateStatistic?.statFieldValue?.value ?? it.estimateStatistic?.statFieldValue?.value ?? 0;
+      const catKey = it.status?.statusCategory?.key || 'new';
+      if (catKey === 'indeterminate') { inprogSP += sp; inprogN++; } else { todoSP += sp; todoN++; }
+    }
+    return {
+      sprintId: sprint.id, sprintName: sprint.name,
+      completedSP, notCompletedSP, scopeSP: completedSP + notCompletedSP,
+      todoSP, inprogSP, doneN: (c.completedIssues || []).length, todoN, inprogN,
+    };
+  } catch (e) {
+    return null;
+  }
+}
+
 // Mantém exatamente os caminhos de campo que o front-end (processSquad) usa
 function slim(issue) {
   const f = issue.fields || {};
@@ -108,12 +149,14 @@ export default {
     try {
       const auth = 'Basic ' + btoa(`${env.JIRA_EMAIL}:${env.JIRA_API_TOKEN}`);
       const squads = {};
+      const sprintReport = {};
       for (const p of PROJECTS) {
         const jql = `project = ${p} AND sprint is not EMPTY AND issuetype NOT IN subtaskIssueTypes()`;
         const issues = await searchAll(auth, jql);
         squads[p] = issues.map(slim);
+        sprintReport[p] = await getSprintReport(auth, BOARD_BY_PROJECT[p]);
       }
-      const data = { generatedAt: new Date().toISOString(), squads, live: true };
+      const data = { generatedAt: new Date().toISOString(), squads, sprintReport, live: true };
       return new Response(JSON.stringify(data), {
         headers: { ...corsHeaders(origin), 'Content-Type': 'application/json' },
       });

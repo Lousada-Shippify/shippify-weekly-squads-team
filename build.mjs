@@ -20,7 +20,8 @@ const FIELDS = ['status','customfield_10028','customfield_10546','customfield_10
 // NENHUMA squad inclui subtarefas: com a migração dos pontos para o campo Story Points (DEV + QA)
 // nos cards principais, incluir subtasks na AE duplicava pontos (badge AE Sprint 5 = 80 SP; com
 // subtasks o hub inflava para 142,5).
-const PROJECTS = [ ['AE', false], ['OE', false], ['EE', false] ];
+// Board de cada squad (necessário para puxar o relatório oficial de sprint do Jira abaixo).
+const PROJECTS = [ ['AE', 479], ['OE', 474], ['EE', 475] ];
 
 async function post(url, body) {
   const r = await fetch(url, {
@@ -30,6 +31,43 @@ async function post(url, body) {
   });
   if (!r.ok) throw new Error(`${r.status} ${url} :: ${(await r.text()).slice(0, 300)}`);
   return r.json();
+}
+
+async function get(url) {
+  const r = await fetch(url, { headers: { Authorization: AUTH, Accept: 'application/json' } });
+  if (!r.ok) throw new Error(`${r.status} ${url} :: ${(await r.text()).slice(0, 300)}`);
+  return r.json();
+}
+
+// Relatório OFICIAL de sprint do Jira — o mesmo endpoint que alimenta os widgets nativos
+// "Progresso do sprint" e "Burndown" no board. Usado como fonte da verdade para Scope/Completed/
+// Remaining SP da sprint ativa, em vez de recalcularmos por conta própria (evita qualquer
+// divergência com o que o time vê direto no Jira). Endpoint legado (greenhopper) mas estável e
+// amplamente usado; se falhar (ex.: indisponível), o front-end cai de volta pro cálculo via JQL.
+async function getSprintReport(boardId) {
+  try {
+    const sprints = await get(`https://${SITE}/rest/agile/1.0/board/${boardId}/sprint?state=active`);
+    const sprint = (sprints.values || [])[0];
+    if (!sprint) return null;
+    const report = await get(`https://${SITE}/rest/greenhopper/1.0/rapid/charts/sprintreport?rapidViewId=${boardId}&sprintId=${sprint.id}`);
+    const c = report.contents || {};
+    const completedSP = c.completedIssuesEstimateSum?.value || 0;
+    const notCompletedSP = c.issuesNotCompletedEstimateSum?.value || 0;
+    let todoSP = 0, inprogSP = 0, todoN = 0, inprogN = 0;
+    for (const it of (c.issuesNotCompletedInCurrentSprint || [])) {
+      const sp = it.currentEstimateStatistic?.statFieldValue?.value ?? it.estimateStatistic?.statFieldValue?.value ?? 0;
+      const catKey = it.status?.statusCategory?.key || 'new';
+      if (catKey === 'indeterminate') { inprogSP += sp; inprogN++; } else { todoSP += sp; todoN++; }
+    }
+    return {
+      sprintId: sprint.id, sprintName: sprint.name,
+      completedSP, notCompletedSP, scopeSP: completedSP + notCompletedSP,
+      todoSP, inprogSP, doneN: (c.completedIssues || []).length, todoN, inprogN,
+    };
+  } catch (e) {
+    console.warn(`sprint report indisponível para board ${boardId}:`, e.message);
+    return null;
+  }
 }
 
 // Endpoint novo (/search/jql, paginação por nextPageToken) com fallback para o legado (/search, startAt)
@@ -78,13 +116,15 @@ function slim(issue) {
 }
 
 const squads = {};
-for (const [p, incSub] of PROJECTS) {
-  const jql = `project = ${p} AND sprint is not EMPTY` + (incSub ? '' : ' AND issuetype NOT IN subtaskIssueTypes()');
+const sprintReport = {};
+for (const [p, boardId] of PROJECTS) {
+  const jql = `project = ${p} AND sprint is not EMPTY AND issuetype NOT IN subtaskIssueTypes()`;
   const issues = await searchAll(jql);
   squads[p] = issues.map(slim);
-  console.log(`${p}: ${issues.length} issues`);
+  sprintReport[p] = await getSprintReport(boardId);
+  console.log(`${p}: ${issues.length} issues` + (sprintReport[p] ? ` · sprint report: ${sprintReport[p].completedSP}/${sprintReport[p].scopeSP} SP` : ' · sem sprint report'));
 }
 
-const data = { generatedAt: new Date().toISOString(), squads };
+const data = { generatedAt: new Date().toISOString(), squads, sprintReport };
 await import('node:fs').then(fs => fs.writeFileSync('data.json', JSON.stringify(data)));
 console.log('data.json gerado em', data.generatedAt);
