@@ -6,28 +6,23 @@
 // proteger com login (GitHub Pages puro não aceita Access na frente, só domínios/rotas
 // Cloudflare). O acesso em si continua sendo o mesmo site; só passa a exigir login antes.
 //
-// CONFIGURAÇÃO (depois de colar este código e dar Deploy):
+// CONFIGURAÇÃO (depois de colar este código e dar Deploy) — SEM precisar criar nada no Google
+// Cloud Console. O login é por código enviado por e-mail (One-Time PIN), restrito a @shippify.co:
 //   1) Workers & Pages → este Worker → Settings → Domains & Routes → anote a URL pública
 //      (algo como https://weekly-hub-gate.<seu-usuario>.workers.dev) — essa passa a ser a URL
-//      oficial pra compartilhar com o time (não mais o link direto do GitHub Pages).
-//   2) No Cloudflare, abra o "Zero Trust" (menu lateral esquerdo do dashboard principal).
-//      Se for a primeira vez, escolha um nome de equipe (qualquer um, ex.: "shippify-weekly").
-//   3) Zero Trust → Settings → Authentication → Add new → Google:
-//        - Siga o passo a passo do próprio Cloudflare pra criar um OAuth Client ID no Google
-//          Cloud Console (console.cloud.google.com → APIs & Services → Credentials → Create
-//          Credentials → OAuth client ID → Web application). A "Authorized redirect URI" que o
-//          Google pede é a que o Cloudflare mostra na tela (algo como
-//          https://<seu-time>.cloudflareaccess.com/cdn-cgi/access/callback).
-//        - Cole o Client ID e o Client Secret gerados no Google de volta no Cloudflare.
-//   4) Zero Trust → Access → Applications → Add an application → Self-hosted:
+//      oficial pra compartilhar com o time.
+//   2) Abra "Zero Trust" no menu lateral do Cloudflare (primeira vez: escolha um nome de
+//      equipe, qualquer um, ex.: "shippify-weekly"). Não precisa mexer em Authentication —
+//      o método "One-time PIN" já vem habilitado por padrão.
+//   3) Zero Trust → Access → Applications → Add an application → Self-hosted:
 //        - Application domain: cole a URL do Worker (do passo 1), sem o "https://".
-//        - Identity providers: marque só "Google" (desmarque o login por PIN, se aparecer).
-//   5) Na política (Policy) da aplicação:
+//        - Identity providers: deixe marcado só "One-time PIN".
+//   4) Na política (Policy) da aplicação:
 //        - Nome: "Só Shippify"
 //        - Action: Allow
 //        - Include → selecione "Emails ending in" → digite: @shippify.co
-//   6) Salve. Pronto — quem tentar abrir a URL do Worker vai ver a tela de login do Google, e só
-//      quem logar com e-mail @shippify.co consegue entrar.
+//   5) Salve. Pronto — quem abrir a URL do Worker vai digitar o e-mail @shippify.co, receber um
+//      código de 6 dígitos por e-mail e usar isso pra entrar (sem senha, sem conta Google).
 //
 // Me envie a URL final do Worker (passo 1) que eu confirmo se está tudo funcionando.
 
