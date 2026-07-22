@@ -17,6 +17,10 @@ if (!EMAIL || !TOKEN) { console.error('Defina os secrets JIRA_EMAIL e JIRA_API_T
 
 const AUTH = 'Basic ' + Buffer.from(`${EMAIL}:${TOKEN}`).toString('base64');
 const FIELDS = ['status','customfield_10028','customfield_10546','customfield_10020','resolutiondate','summary','parent','assignee'];
+// Retrabalho por rejeição (changelog): conta quantas vezes a issue ENTROU em cada status abaixo.
+// Nomes reais confirmados no Jira (changelog de OE-140): "CODE REVIEW REJECTED" e "REJECTED BY QA".
+const REJECT_CODE_RE = /CODE\s*REVIEW\s*REJECTED/i;
+const REJECT_QA_RE = /REJECTED\s*BY\s*QA|QA\s*DENIED/i;
 // NENHUMA squad inclui subtarefas: com a migração dos pontos para o campo Story Points (DEV + QA)
 // nos cards principais, incluir subtasks na AE duplicava pontos (badge AE Sprint 5 = 80 SP; com
 // subtasks o hub inflava para 142,5).
@@ -71,12 +75,13 @@ async function getSprintReport(boardId) {
 }
 
 // Endpoint novo (/search/jql, paginação por nextPageToken) com fallback para o legado (/search, startAt)
+// expand:['changelog'] traz o histórico de transições — usado para contar retrabalho por rejeição.
 async function searchAll(jql) {
   const out = [];
   try {
     let token = null;
     for (let i = 0; i < 20; i++) {
-      const body = { jql, fields: FIELDS, maxResults: 100, ...(token ? { nextPageToken: token } : {}) };
+      const body = { jql, fields: FIELDS, expand: ['changelog'], maxResults: 100, ...(token ? { nextPageToken: token } : {}) };
       const d = await post(`https://${SITE}/rest/api/3/search/jql`, body);
       out.push(...(d.issues || []));
       if (d.isLast === false && d.nextPageToken) token = d.nextPageToken; else break;
@@ -86,7 +91,7 @@ async function searchAll(jql) {
     console.warn('search/jql falhou, tentando /search legado:', e.message);
     let startAt = 0;
     for (let i = 0; i < 20; i++) {
-      const d = await post(`https://${SITE}/rest/api/3/search`, { jql, fields: FIELDS, maxResults: 100, startAt });
+      const d = await post(`https://${SITE}/rest/api/3/search`, { jql, fields: FIELDS, expand: ['changelog'], maxResults: 100, startAt });
       out.push(...(d.issues || []));
       startAt += (d.issues || []).length;
       if (startAt >= (d.total || 0) || !(d.issues || []).length) break;
@@ -95,9 +100,26 @@ async function searchAll(jql) {
   }
 }
 
+// Conta quantas vezes a issue ENTROU em "CODE REVIEW REJECTED" (retrabalho de código) e em
+// "REJECTED BY QA"/"QA DENIED" (retrabalho de QA), a partir do changelog completo do Jira.
+// Inclui rejeições já corrigidas e reincidências (não é só o status atual).
+function countRejections(issue) {
+  const histories = issue.changelog?.histories || [];
+  let rejCode = 0, rejQA = 0, lastAt = null, lastWhat = null;
+  for (const h of histories) {
+    for (const it of (h.items || [])) {
+      if (it.field !== 'status') continue;
+      if (REJECT_CODE_RE.test(it.toString || '')) { rejCode++; lastAt = h.created; lastWhat = 'CODE REVIEW REJECTED'; }
+      else if (REJECT_QA_RE.test(it.toString || '')) { rejQA++; lastAt = h.created; lastWhat = 'REJECTED BY QA'; }
+    }
+  }
+  return { rejCode, rejQA, lastRejAt: lastAt, lastRejWhat: lastWhat };
+}
+
 // Mantém exatamente os caminhos de campo que o front-end (processSquad) usa
 function slim(issue) {
   const f = issue.fields || {};
+  const rej = countRejections(issue);
   return {
     key: issue.key,
     fields: {
@@ -112,6 +134,10 @@ function slim(issue) {
       parent: f.parent?.fields?.summary ? { fields: { summary: f.parent.fields.summary } } : null,
       assignee: f.assignee?.displayName ? { displayName: f.assignee.displayName } : null,
     },
+    rejCode: rej.rejCode,
+    rejQA: rej.rejQA,
+    lastRejAt: rej.lastRejAt,
+    lastRejWhat: rej.lastRejWhat,
   };
 }
 
