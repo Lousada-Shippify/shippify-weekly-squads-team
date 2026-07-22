@@ -87,9 +87,11 @@
   .sbar.lg{height:16px;max-width:none;margin:6px 0 8px}
   .sbar-legend{display:flex;gap:26px;font-family:Montserrat,sans-serif;font-size:12px;color:var(--text-secondary);margin-bottom:14px;flex-wrap:wrap}
   .sbar-legend b{font-size:16px;display:block;font-family:Geologica,sans-serif}
-  .ip-status{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:-4px 0 16px}
-  .ip-status .ip-lbl{font-family:Montserrat,sans-serif;font-size:11.5px;color:var(--text-disabled);margin-right:2px}
-  .ip-status .pill{font-size:10.5px;padding:2px 8px}
+  .sbar-legend .leg-ip{flex:1 1 auto;min-width:220px}
+  .ip-subs{margin-top:8px}
+  .ip-subs .ip-lbl{display:block;font-family:Montserrat,sans-serif;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-disabled);margin-bottom:5px}
+  .ip-subs-pills{display:flex;flex-wrap:wrap;gap:5px}
+  .ip-subs-pills .pill{font-size:10.5px;padding:2px 8px}
 </style>
 </head>
 <body>
@@ -246,7 +248,8 @@ function processSquad(sq, nodes, report){
       summary:f.summary||'', epic:(f.parent&&f.parent.fields&&f.parent.fields.summary)||null,
       assignee:(f.assignee&&f.assignee.displayName)||null, spNull:f[SP_FIELD]==null,
       spqa:(typeof f[QA_FIELD]==='number'?f[QA_FIELD]:null),
-      rejCode:n.rejCode||0, rejQA:n.rejQA||0, lastRejAt:n.lastRejAt||null, lastRejWhat:n.lastRejWhat||null});
+      rejCode:n.rejCode||0, rejQA:n.rejQA||0, lastRejAt:n.lastRejAt||null, lastRejWhat:n.lastRejWhat||null,
+      subs:Array.isArray(n.subs)?n.subs:[]});
     const rec=recs[recs.length-1];
     for(const s of sorted){ const agg=getS(s); if(cancelled){agg.cancSP+=sp;agg.cancN++;} else {agg.scope+=sp;agg.count++;} }
     // active-sprint badges (non-subtask issues by status category, cancelled excluded)
@@ -335,11 +338,13 @@ function processSquad(sq, nodes, report){
     }
     active.deliveries=Object.entries(gm).sort((a,b)=>b[1].sp-a[1].sp);
     active.doneList=acts.filter(r=>r.cat==='done').map(r=>({key:r.key,summary:r.summary,sp:r.sp}));
-    // Breakdown por status dos cards EM ANDAMENTO (indeterminate) da sprint ativa — mostra quais
-    // status compõem a barra azul "Em andamento" e quantos cards/SP há em cada um.
-    const ipBy={};
-    for(const r of acts.filter(r=>r.cat==='indeterminate')){const b=ipBy[r.status]=ipBy[r.status]||{n:0,sp:0};b.n++;b.sp+=r.sp;}
-    active.inprogByStatus=Object.entries(ipBy).sort((a,b)=>b[1].sp-a[1].sp);
+    // Breakdown do trabalho EM ANDAMENTO por status — contando SUBTAREFAS (é nelas que o trabalho
+    // acontece, não na história inteira). Considera todas as subtarefas das histórias da sprint
+    // ativa cujo próprio status está na categoria "em andamento" (indeterminate), qualquer que seja
+    // o status da história-pai, agrupadas pelo status da subtarefa.
+    const ipSub={};
+    for(const r of acts){ for(const st of (r.subs||[])){ if(st.c==='indeterminate'){ ipSub[st.s]=(ipSub[st.s]||0)+1; } } }
+    active.inprogSubByStatus=Object.entries(ipSub).sort((a,b)=>b[1]-a[1]);
   }
   // Desempenho por Dev/QA (responsável): sprint atual + média entregue por sprint FECHADA (viva —
   // recalculada a cada sprint encerrada). Participação = sprints fechadas em que teve issues.
@@ -538,12 +543,14 @@ function renderPlan(){
       (()=>{const pd=pct(a.doneSP,a.badgeScope), pi=pct(a.inprogSP,a.badgeScope), pn=Math.max(0,100-pd-pi);
         return '<h4 style="margin:14px 0 4px;font-size:13px">Progresso do sprint <small style="color:var(--text-secondary);font-weight:400">(por SP — espelha o gadget do Jira)</small></h4>'+
         '<div class="sbar lg"><div style="background:var(--verde);width:'+pd+'%"></div><div style="background:var(--turquesa);width:'+pi+'%"></div></div>'+
-        '<div class="sbar-legend">'+
-        '<span><b style="color:var(--verde)">'+pd+'%</b>Concluído · '+fmtSP(a.doneSP)+' SP · '+a.doneN+' issues</span>'+
-        '<span><b style="color:var(--turquesa)">'+pi+'%</b>Em andamento · '+fmtSP(a.inprogSP)+' SP · '+a.inprogN+' issues</span>'+
-        '<span><b>'+pn+'%</b>Não iniciado · '+fmtSP(a.todoSP)+' SP · '+a.todoN+' issues</span></div>'+
-        ((a.inprogByStatus&&a.inprogByStatus.length)?'<div class="ip-status"><span class="ip-lbl">Em andamento por status:</span>'+
-          a.inprogByStatus.map(([st,v])=>'<span class="pill '+(/reject|deni|block/i.test(st)?'red':(/qa|review|test|deploy|wait|pend/i.test(st)?'yellow':'blue'))+'">'+esc(st)+' · '+v.n+' '+(v.n===1?'card':'cards')+' · '+fmtSP(v.sp)+' SP</span>').join('')+'</div>':'');})()+
+        (()=>{const ipsub=a.inprogSubByStatus||[]; const tot=ipsub.reduce((x,kv)=>x+kv[1],0);
+          const cls=st=>/reject|deni|block/i.test(st)?'red':(/qa|review|test|deploy|wait|pend/i.test(st)?'yellow':'blue');
+          const subBlock=ipsub.length?'<div class="ip-subs"><span class="ip-lbl">Subtarefas em andamento · '+tot+'</span><div class="ip-subs-pills">'+
+            ipsub.map(kv=>'<span class="pill '+cls(kv[0])+'">'+esc(kv[0])+' · '+kv[1]+'</span>').join('')+'</div></div>':'';
+          return '<div class="sbar-legend">'+
+          '<span><b style="color:var(--verde)">'+pd+'%</b>Concluído · '+fmtSP(a.doneSP)+' SP · '+a.doneN+' issues</span>'+
+          '<span class="leg-ip"><b style="color:var(--turquesa)">'+pi+'%</b>Em andamento · '+fmtSP(a.inprogSP)+' SP · '+a.inprogN+' issues'+subBlock+'</span>'+
+          '<span><b>'+pn+'%</b>Não iniciado · '+fmtSP(a.todoSP)+' SP · '+a.todoN+' issues</span></div>';})();})()+
       '<div class="kpi-grid">'+
       kpi('Scope SP',fmtSP(a.badgeScope),a.todoN+a.inprogN+a.doneN+' issues')+
       kpi('Completed SP',fmtSP(a.doneSP),a.doneN+' issues done')+

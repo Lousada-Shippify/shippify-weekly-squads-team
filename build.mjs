@@ -103,6 +103,29 @@ async function searchAll(jql) {
   }
 }
 
+// Subtarefas das histórias informadas (parentKeys), agrupadas por chave do pai. Só status +
+// categoria de cada subtarefa — usado no breakdown "Em andamento por status" (o trabalho real
+// acontece nas subtarefas). Buscado só para as histórias da sprint ativa para não pesar.
+async function fetchSubtasksByParent(project, parentKeys) {
+  const byParent = {};
+  const CHUNK = 100;
+  for (let i = 0; i < parentKeys.length; i += CHUNK) {
+    const chunk = parentKeys.slice(i, i + CHUNK);
+    const jql = `project = ${project} AND issuetype IN subtaskIssueTypes() AND parent IN (${chunk.join(',')})`;
+    let token = null;
+    for (let pg = 0; pg < 20; pg++) {
+      const body = { jql, fields: ['status', 'parent'], maxResults: 100, ...(token ? { nextPageToken: token } : {}) };
+      const d = await post(`https://${SITE}/rest/api/3/search/jql`, body);
+      for (const st of (d.issues || [])) {
+        const pk = st.fields?.parent?.key; if (!pk) continue;
+        (byParent[pk] = byParent[pk] || []).push({ s: st.fields.status?.name || '—', c: st.fields.status?.statusCategory?.key || 'new' });
+      }
+      if (d.isLast === false && d.nextPageToken) token = d.nextPageToken; else break;
+    }
+  }
+  return byParent;
+}
+
 // Conta quantas vezes a issue ENTROU em "CODE REVIEW REJECTED" (retrabalho de código) e em
 // "REJECTED BY QA"/"QA DENIED" (retrabalho de QA), a partir do changelog completo do Jira.
 // Inclui rejeições já corrigidas e reincidências (não é só o status atual).
@@ -149,9 +172,15 @@ const sprintReport = {};
 for (const [p, boardId] of PROJECTS) {
   const jql = `project = ${p} AND sprint is not EMPTY AND issuetype NOT IN subtaskIssueTypes()`;
   const issues = await searchAll(jql);
-  squads[p] = issues.map(slim);
+  // Histórias da sprint ATIVA (por board) — só delas buscamos subtarefas.
+  const activeKeys = issues
+    .filter(i => (i.fields?.customfield_10020 || []).some(s => s.state === 'active' && s.boardId === boardId))
+    .map(i => i.key);
+  const subByParent = activeKeys.length ? await fetchSubtasksByParent(p, activeKeys) : {};
+  squads[p] = issues.map(i => { const o = slim(i); o.subs = subByParent[i.key] || []; return o; });
   sprintReport[p] = await getSprintReport(boardId);
-  console.log(`${p}: ${issues.length} issues` + (sprintReport[p] ? ` · sprint report: ${sprintReport[p].completedSP}/${sprintReport[p].scopeSP} SP` : ' · sem sprint report'));
+  const subCount = Object.values(subByParent).reduce((a, v) => a + v.length, 0);
+  console.log(`${p}: ${issues.length} issues · ${subCount} subtarefas (sprint ativa)` + (sprintReport[p] ? ` · sprint report: ${sprintReport[p].completedSP}/${sprintReport[p].scopeSP} SP` : ''));
 }
 
 const data = { generatedAt: new Date().toISOString(), squads, sprintReport };
