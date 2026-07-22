@@ -87,11 +87,16 @@
   .sbar.lg{height:16px;max-width:none;margin:6px 0 8px}
   .sbar-legend{display:flex;gap:26px;font-family:Montserrat,sans-serif;font-size:12px;color:var(--text-secondary);margin-bottom:14px;flex-wrap:wrap}
   .sbar-legend b{font-size:16px;display:block;font-family:Geologica,sans-serif}
-  .sbar-legend .leg-ip{flex:1 1 auto;min-width:220px}
-  .ip-subs{margin-top:8px}
-  .ip-subs .ip-lbl{display:block;font-family:Montserrat,sans-serif;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-disabled);margin-bottom:5px}
-  .ip-subs-pills{display:flex;flex-wrap:wrap;gap:5px}
-  .ip-subs-pills .pill{font-size:10.5px;padding:2px 8px}
+  /* Barra "Progresso do sprint" com etiquetas de subtarefas sobrepostas na faixa "Em andamento" */
+  .sbar-wrap{position:relative;margin:6px 0 6px}
+  .sbar-wrap .sbar.lg{height:26px;margin:0}
+  .sbar-ip-overlay{position:absolute;top:0;height:26px;display:flex;align-items:center;justify-content:space-evenly;gap:6px;pointer-events:none;overflow:visible}
+  .ip-tag{font-family:Geologica,sans-serif;font-size:10.5px;font-weight:600;line-height:1;white-space:nowrap;padding:3px 9px;border-radius:11px;box-shadow:0 1px 3px rgba(0,0,0,.4);border:1px solid rgba(0,0,0,.15)}
+  .ip-tag b{font-weight:800;margin-right:3px}
+  .ip-tag.ip-yellow{background:#F2D98A;color:#4A3A08}
+  .ip-tag.ip-blue{background:#A7E4F2;color:#0B3B47}
+  .ip-tag.ip-red{background:#F4A9BC;color:#5A0F22}
+  .ip-cap{font-family:Montserrat,sans-serif;font-size:11px;color:var(--text-disabled);margin:0 0 8px}
 </style>
 </head>
 <body>
@@ -542,14 +547,16 @@ function renderPlan(){
       '<p style="font-size:11px;color:var(--text-disabled);margin:6px 0 14px">✏️ campos editáveis — salvos automaticamente neste navegador (localStorage).</p>'+
       (()=>{const pd=pct(a.doneSP,a.badgeScope), pi=pct(a.inprogSP,a.badgeScope), pn=Math.max(0,100-pd-pi);
         return '<h4 style="margin:14px 0 4px;font-size:13px">Progresso do sprint <small style="color:var(--text-secondary);font-weight:400">(por SP — espelha o gadget do Jira)</small></h4>'+
-        '<div class="sbar lg"><div style="background:var(--verde);width:'+pd+'%"></div><div style="background:var(--turquesa);width:'+pi+'%"></div></div>'+
         (()=>{const ipsub=a.inprogSubByStatus||[]; const tot=ipsub.reduce((x,kv)=>x+kv[1],0);
           const cls=st=>/reject|deni|block/i.test(st)?'red':(/qa|review|test|deploy|wait|pend/i.test(st)?'yellow':'blue');
-          const subBlock=ipsub.length?'<div class="ip-subs"><span class="ip-lbl">Subtarefas em andamento · '+tot+'</span><div class="ip-subs-pills">'+
-            ipsub.map(kv=>'<span class="pill '+cls(kv[0])+'">'+esc(kv[0])+' · '+kv[1]+'</span>').join('')+'</div></div>':'';
-          return '<div class="sbar-legend">'+
+          // Etiquetas de subtarefas em andamento SOBREPOSTAS na faixa azul "Em andamento" da barra.
+          const tags=ipsub.map(kv=>'<span class="ip-tag ip-'+cls(kv[0])+'"><b>'+kv[1]+'</b> '+esc(kv[0])+'</span>').join('');
+          const overlay=(ipsub.length&&pi>0)?'<div class="sbar-ip-overlay" style="left:'+pd+'%;width:'+pi+'%">'+tags+'</div>':'';
+          return '<div class="sbar-wrap"><div class="sbar lg"><div style="background:var(--verde);width:'+pd+'%"></div><div style="background:var(--turquesa);width:'+pi+'%"></div></div>'+overlay+'</div>'+
+          (ipsub.length?'<div class="ip-cap">Etiquetas na faixa “Em andamento” = <strong>subtarefas</strong> em andamento por status ('+tot+' no total) — é onde o trabalho realmente acontece</div>':'')+
+          '<div class="sbar-legend">'+
           '<span><b style="color:var(--verde)">'+pd+'%</b>Concluído · '+fmtSP(a.doneSP)+' SP · '+a.doneN+' issues</span>'+
-          '<span class="leg-ip"><b style="color:var(--turquesa)">'+pi+'%</b>Em andamento · '+fmtSP(a.inprogSP)+' SP · '+a.inprogN+' issues'+subBlock+'</span>'+
+          '<span><b style="color:var(--turquesa)">'+pi+'%</b>Em andamento · '+fmtSP(a.inprogSP)+' SP · '+a.inprogN+' issues</span>'+
           '<span><b>'+pn+'%</b>Não iniciado · '+fmtSP(a.todoSP)+' SP · '+a.todoN+' issues</span></div>';})();})()+
       '<div class="kpi-grid">'+
       kpi('Scope SP',fmtSP(a.badgeScope),a.todoN+a.inprogN+a.doneN+' issues')+
