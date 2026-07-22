@@ -158,19 +158,23 @@ const SQUADS = [
 // anexo OE + Sprint Plans 5570562 e 22708225). Sprints fechadas não mudam mais; os campos atuais
 // do Jira NÃO preservam a foto da época (commitment, SP re-estimados, clones herdam sprint field),
 // então a reconstrução via JQL divergiria. Sem baseline → reconstrução, marcada com "≈".
+// Análise curada por sprint (Constraints / Risks / Validations). Só é injetada quando a sprint
+// ativa da squad bate com "sprint" abaixo — ao virar de sprint, atualizar este bloco (senão os
+// campos aparecem vazios até alguém preencher). Atualizado para a Sprint 5 em 22/07/2026 a partir
+// dos dados ao vivo do Jira (Day 7).
 const AGR_SUGGEST={
-  AE:{sprint:'Sprint 4',
-    constraints:'No public holidays, but we are in the World Cup period — there may be matches / possible breaks.\nDeveloper Patrick on vacation from mid-sprint, returning halfway through Sprint 5 (08/07 ~ 20/07).',
-    risks:'Deployment-related risks around the MM Phase 3 delivery and its tight deadline, compounded by interdependencies with other squads.\n13 carryover issues (14.75 SP) still in the post-dev pipeline (13 SP in CODE REVIEW) — closing them early frees the MM Phase 3 path.',
-    validations:'Validation with the Amazon team (MM project) on July 8 — MM Phase 3 launched early to ensure "live" testing.\nPickup version (tokens) to Americanas/Abbiamo — deadline July 15; delivering earlier is a success.'},
-  OE:{sprint:'Sprint 4',
-    constraints:'World Cup period (possible match breaks).\nMM Phase 3 deadline July 8: QA-pipeline carryover (alert visibility / Smart Notification) must be closed before pulling new Control Tower scope (Sprint 3 retro recommendation: dedicated QA focus early in the sprint).\nTech Support bug backlog (OE-190, 5 SP) competes for dev capacity.',
-    risks:'40% of the sprint scope (38 SP) is carryover from Sprint 3 sitting in the post-dev pipeline: 10.5 SP PENDING QA (incl. Smart Notification bugs OE-176/177/178) and 5.5 SP REJECTED BY QA (Companies — context menu, needs rework).\nQA throughput was the limiting factor in Sprint 3 — risk of repeating the pattern.\nControl Tower (OE-139/140/141, 26 SP) still not started with discovery (OE-180) in progress — estimate uncertainty on the sprint goal itself.',
-    validations:'MM Phase 3 — alert visibility: validate final QA + deploy against the July 8 deadline.\nSmart Notification real-time fixes (OE-176/177/178) pending QA validation.\nControl Tower discovery (OE-180) outcomes to be validated with Operations before build starts.'},
-  EE:{sprint:'Sprint 4',
-    constraints:'Sprint goal not set in Jira (board 475) — recommend registering it on the sprint.\nRefinement placeholders (EE-147–151) reserve capacity for discovery rather than delivery.\nHigh Tech Support demand (EE-124 currently BLOCKED, EE-126 in progress).',
-    risks:'72% of the sprint scope (53.25 SP) is carryover — 28 SP stuck in CODE REVIEW (Gamification EE-24, Smart Notification UX errors EE-18, IdWall sustainability EE-108) and 15 SP in QA.\nSprint 3 pattern (25% SP done, very heavy in-progress tickets) at risk of repeating.\nEE-124 (Tech Support) blocked — external dependency.',
-    validations:'IdWall: upload format fix (EE-101) waiting for deploy; service sustainability (EE-108) in review — validate the end-to-end flow.\nGiuliana Flores max-distance block (EE-144, approved by QA) — validate with the client.\nFleet file validation (EE-136) waiting for deploy — validate with Operations.'},
+  AE:{sprint:'Sprint 5',
+    constraints:'No public holidays. World Cup period — possible match breaks.\nDeveloper Patrick on vacation mid-sprint (14/07 ~ 20/07).\nDeveloper Victor on vacation at the end of the sprint (27/07 ~ 31/07).',
+    risks:'A large volume of items was pushed from Sprint 4 into this sprint and is being monitored, but there is no anticipated risk for Sprint 5 itself.\nCarryover (47.75 SP / 15 issues) is already ~80% resolved — 38.25 SP concluded; only ~9.5 SP still open (1 issue 8 SP not started + 1 approved by QA + 1 waiting for deploy).\n26 issues (65.5 SP) were cancelled this sprint — scope cleanup; confirm it was intentional.',
+    validations:'No external validations planned in this sprint.'},
+  OE:{sprint:'Sprint 5',
+    constraints:'Sprint goal is the continuation of the Control Tower build (macro objective).\nWorld Cup period (possible match breaks).\n45% of the scope (44 SP) is carryover from Sprint 4, concentrated in the post-dev (QA / code review) pipeline.',
+    risks:'The Control Tower (OE-139 / OE-140 / OE-141) is the bulk of the scope and is stuck in the post-dev pipeline: 25 SP REJECTED BY QA (OE-139, OE-140) + 12 SP CODE REVIEW (OE-141).\nQA rework is the bottleneck — OE-140 has bounced back 3x (1 code / 2 QA) and OE-139 2x (QA). Same pattern flagged in previous retros.\nScope (98 SP) is far above the historical delivered average (~23 SP) → overcommit risk. Only 14% done on Day 7.',
+    validations:'Control Tower views must pass QA before pulling new scope: Act Now action queue (OE-140), "Torre de Controle" view in Dash + Trips list (OE-139), Trip Detail (OE-141) — prioritize QA retest early.'},
+  EE:{sprint:'Sprint 5',
+    constraints:'Sprint goal not set in Jira (board 475) — recommend registering it on the sprint.\nSustainability is the dominant epic (43 SP / 12 issues).\nWorld Cup period (possible match breaks).',
+    risks:'Low carryover (14 SP / 2 issues, almost entirely already concluded) — healthy sign going into the sprint.\nHeavy concentration in the Sustainability epic (43 SP / 12 issues; only 3 done / 4 in progress on Day 7) — watch throughput so it does not pile up in the pipeline.\nIDWALL Phase 2 (9 SP / 2 issues) still with no delivery started.',
+    validations:'No critical external validations registered.\nValidate Sustainability deliverables with Operations as they are completed; confirm IDWALL Phase 2 end-to-end flow before release.'},
 };
 const S1P={start:'2026-05-19',end:'2026-06-01'}, S2P={start:'2026-06-02',end:'2026-06-16'}, S3P={start:'2026-06-16',end:'2026-06-30'};
 const BASELINES = {
