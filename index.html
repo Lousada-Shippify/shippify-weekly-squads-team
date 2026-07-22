@@ -87,16 +87,17 @@
   .sbar.lg{height:16px;max-width:none;margin:6px 0 8px}
   .sbar-legend{display:flex;gap:26px;font-family:Montserrat,sans-serif;font-size:12px;color:var(--text-secondary);margin-bottom:14px;flex-wrap:wrap}
   .sbar-legend b{font-size:16px;display:block;font-family:Geologica,sans-serif}
-  /* Barra "Progresso do sprint" com etiquetas de subtarefas sobrepostas na faixa "Em andamento" */
-  .sbar-wrap{position:relative;margin:6px 0 6px}
-  .sbar-wrap .sbar.lg{height:26px;margin:0}
-  .sbar-ip-overlay{position:absolute;top:0;right:6px;height:26px;display:flex;align-items:center;justify-content:flex-start;gap:7px;padding-left:6px;pointer-events:none;overflow:visible}
-  .ip-tag{font-family:Geologica,sans-serif;font-size:10.5px;font-weight:600;line-height:1;white-space:nowrap;padding:3px 9px;border-radius:11px;box-shadow:0 1px 3px rgba(0,0,0,.4);border:1px solid rgba(0,0,0,.15)}
-  .ip-tag b{font-weight:800;margin-right:3px}
-  .ip-tag.ip-yellow{background:#F2D98A;color:#4A3A08}
-  .ip-tag.ip-blue{background:#A7E4F2;color:#0B3B47}
-  .ip-tag.ip-red{background:#F4A9BC;color:#5A0F22}
-  .ip-cap{font-family:Montserrat,sans-serif;font-size:11px;color:var(--text-disabled);margin:0 0 8px}
+  /* Decomposição do "Em andamento" por status de subtarefa — mini-barra empilhada + legenda */
+  .ipp{background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin:0 0 16px}
+  .ipp-head{font-family:Montserrat,sans-serif;font-size:12px;font-weight:600;color:var(--text-primary);margin-bottom:9px}
+  .ipp-head small{font-weight:400;color:var(--text-disabled)}
+  .ipp-bar{display:flex;height:12px;border-radius:6px;overflow:hidden;background:rgba(255,255,255,.06)}
+  .ipp-bar>div{height:100%;min-width:3px}
+  .ipp-bar>div+div{border-left:1px solid var(--bg-card)}
+  .ipp-legend{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:10px}
+  .ipp-item{display:inline-flex;align-items:center;font-family:Montserrat,sans-serif;font-size:11.5px;color:var(--text-secondary)}
+  .ipp-item i{width:9px;height:9px;border-radius:2px;margin-right:6px;flex:none}
+  .ipp-item b{margin-left:6px;color:var(--text-primary);font-family:Geologica,sans-serif;font-size:12px}
 </style>
 </head>
 <body>
@@ -547,17 +548,23 @@ function renderPlan(){
       '<p style="font-size:11px;color:var(--text-disabled);margin:6px 0 14px">✏️ campos editáveis — salvos automaticamente neste navegador (localStorage).</p>'+
       (()=>{const pd=pct(a.doneSP,a.badgeScope), pi=pct(a.inprogSP,a.badgeScope), pn=Math.max(0,100-pd-pi);
         return '<h4 style="margin:14px 0 4px;font-size:13px">Progresso do sprint <small style="color:var(--text-secondary);font-weight:400">(por SP — espelha o gadget do Jira)</small></h4>'+
+        '<div class="sbar lg"><div style="background:var(--verde);width:'+pd+'%"></div><div style="background:var(--turquesa);width:'+pi+'%"></div></div>'+
+        '<div class="sbar-legend">'+
+        '<span><b style="color:var(--verde)">'+pd+'%</b>Concluído · '+fmtSP(a.doneSP)+' SP · '+a.doneN+' issues</span>'+
+        '<span><b style="color:var(--turquesa)">'+pi+'%</b>Em andamento · '+fmtSP(a.inprogSP)+' SP · '+a.inprogN+' issues</span>'+
+        '<span><b>'+pn+'%</b>Não iniciado · '+fmtSP(a.todoSP)+' SP · '+a.todoN+' issues</span></div>'+
+        // Decomposição do "Em andamento" por status DE SUBTAREFA (é nelas que o trabalho acontece):
+        // mini-barra empilhada proporcional à contagem de subtarefas + legenda com cor por status.
         (()=>{const ipsub=a.inprogSubByStatus||[]; const tot=ipsub.reduce((x,kv)=>x+kv[1],0);
-          const cls=st=>/reject|deni|block/i.test(st)?'red':(/qa|review|test|deploy|wait|pend/i.test(st)?'yellow':'blue');
-          // Etiquetas de subtarefas em andamento SOBREPOSTAS na faixa azul "Em andamento" da barra.
-          const tags=ipsub.map(kv=>'<span class="ip-tag ip-'+cls(kv[0])+'"><b>'+kv[1]+'</b> '+esc(kv[0])+'</span>').join('');
-          const overlay=(ipsub.length&&pi>0)?'<div class="sbar-ip-overlay" style="left:'+pd+'%">'+tags+'</div>':'';
-          return '<div class="sbar-wrap"><div class="sbar lg"><div style="background:var(--verde);width:'+pd+'%"></div><div style="background:var(--turquesa);width:'+pi+'%"></div></div>'+overlay+'</div>'+
-          (ipsub.length?'<div class="ip-cap">Etiquetas na faixa “Em andamento” = <strong>subtarefas</strong> em andamento por status ('+tot+' no total) — é onde o trabalho realmente acontece</div>':'')+
-          '<div class="sbar-legend">'+
-          '<span><b style="color:var(--verde)">'+pd+'%</b>Concluído · '+fmtSP(a.doneSP)+' SP · '+a.doneN+' issues</span>'+
-          '<span><b style="color:var(--turquesa)">'+pi+'%</b>Em andamento · '+fmtSP(a.inprogSP)+' SP · '+a.inprogN+' issues</span>'+
-          '<span><b>'+pn+'%</b>Não iniciado · '+fmtSP(a.todoSP)+' SP · '+a.todoN+' issues</span></div>';})();})()+
+          if(!ipsub.length) return '';
+          const PAL=['#1EA4C1','#C19D1E','#AA1EC1','#C1591E','#E8557B','#5B8DEF','#12B886'];
+          const seg=ipsub.map((kv,i)=>'<div style="flex:'+kv[1]+';background:'+PAL[i%PAL.length]+'" title="'+esc(kv[0])+' · '+kv[1]+' subtarefa(s)"></div>').join('');
+          const leg=ipsub.map((kv,i)=>'<span class="ipp-item"><i style="background:'+PAL[i%PAL.length]+'"></i>'+esc(kv[0])+'<b>'+kv[1]+'</b></span>').join('');
+          return '<div class="ipp">'+
+            '<div class="ipp-head">No que o time está trabalhando agora <small>· '+tot+' subtarefas em andamento (o trabalho acontece nas subtarefas, não na história inteira)</small></div>'+
+            '<div class="ipp-bar">'+seg+'</div>'+
+            '<div class="ipp-legend">'+leg+'</div>'+
+          '</div>';})();})()+
       '<div class="kpi-grid">'+
       kpi('Scope SP',fmtSP(a.badgeScope),a.todoN+a.inprogN+a.doneN+' issues')+
       kpi('Completed SP',fmtSP(a.doneSP),a.doneN+' issues done')+
