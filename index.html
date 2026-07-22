@@ -87,6 +87,9 @@
   .sbar.lg{height:16px;max-width:none;margin:6px 0 8px}
   .sbar-legend{display:flex;gap:26px;font-family:Montserrat,sans-serif;font-size:12px;color:var(--text-secondary);margin-bottom:14px;flex-wrap:wrap}
   .sbar-legend b{font-size:16px;display:block;font-family:Geologica,sans-serif}
+  .ip-status{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin:-4px 0 16px}
+  .ip-status .ip-lbl{font-family:Montserrat,sans-serif;font-size:11.5px;color:var(--text-disabled);margin-right:2px}
+  .ip-status .pill{font-size:10.5px;padding:2px 8px}
 </style>
 </head>
 <body>
@@ -332,6 +335,11 @@ function processSquad(sq, nodes, report){
     }
     active.deliveries=Object.entries(gm).sort((a,b)=>b[1].sp-a[1].sp);
     active.doneList=acts.filter(r=>r.cat==='done').map(r=>({key:r.key,summary:r.summary,sp:r.sp}));
+    // Breakdown por status dos cards EM ANDAMENTO (indeterminate) da sprint ativa — mostra quais
+    // status compõem a barra azul "Em andamento" e quantos cards/SP há em cada um.
+    const ipBy={};
+    for(const r of acts.filter(r=>r.cat==='indeterminate')){const b=ipBy[r.status]=ipBy[r.status]||{n:0,sp:0};b.n++;b.sp+=r.sp;}
+    active.inprogByStatus=Object.entries(ipBy).sort((a,b)=>b[1].sp-a[1].sp);
   }
   // Desempenho por Dev/QA (responsável): sprint atual + média entregue por sprint FECHADA (viva —
   // recalculada a cada sprint encerrada). Participação = sprints fechadas em que teve issues.
@@ -533,7 +541,9 @@ function renderPlan(){
         '<div class="sbar-legend">'+
         '<span><b style="color:var(--verde)">'+pd+'%</b>Concluído · '+fmtSP(a.doneSP)+' SP · '+a.doneN+' issues</span>'+
         '<span><b style="color:var(--turquesa)">'+pi+'%</b>Em andamento · '+fmtSP(a.inprogSP)+' SP · '+a.inprogN+' issues</span>'+
-        '<span><b>'+pn+'%</b>Não iniciado · '+fmtSP(a.todoSP)+' SP · '+a.todoN+' issues</span></div>';})()+
+        '<span><b>'+pn+'%</b>Não iniciado · '+fmtSP(a.todoSP)+' SP · '+a.todoN+' issues</span></div>'+
+        ((a.inprogByStatus&&a.inprogByStatus.length)?'<div class="ip-status"><span class="ip-lbl">Em andamento por status:</span>'+
+          a.inprogByStatus.map(([st,v])=>'<span class="pill '+(/reject|deni|block/i.test(st)?'red':(/qa|review|test|deploy|wait|pend/i.test(st)?'yellow':'blue'))+'">'+esc(st)+' · '+v.n+' '+(v.n===1?'card':'cards')+' · '+fmtSP(v.sp)+' SP</span>').join('')+'</div>':'');})()+
       '<div class="kpi-grid">'+
       kpi('Scope SP',fmtSP(a.badgeScope),a.todoN+a.inprogN+a.doneN+' issues')+
       kpi('Completed SP',fmtSP(a.doneSP),a.doneN+' issues done')+
