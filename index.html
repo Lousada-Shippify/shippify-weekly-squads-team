@@ -423,12 +423,15 @@ function processSquad(sq, nodes, report){
   return {squad:sq, sprints:list, active, issueCount:nodes.length, devs, qa:qaRow, review, reworkCards};
 }
 
-// Tenta consultar o Jira agora mesmo via Worker (tempo real). Timeout curto para não travar
-// a página se o Worker não estiver configurado/acessível — nesse caso volta null e cai no fallback.
+// Tenta consultar o Jira agora mesmo via Worker (tempo real). Timeout para não travar a página
+// se o Worker não estiver configurado/acessível — nesse caso volta null e cai no fallback.
+// 25s (era 12s): desde que o Worker passou a buscar changelog completo (retrabalho por rejeição)
+// o payload ficou maior e a consulta às vezes passa de 12s, o que estava derrubando pro snapshot
+// antigo com falso "Proxy indisponível" (medido em 22/07/2026: até ~12s só na resposta do fetch).
 async function fetchLive(timeoutMs){
   if(!LIVE_ENDPOINT) return null;
   const ctrl=new AbortController();
-  const timer=setTimeout(()=>ctrl.abort(),timeoutMs||12000);
+  const timer=setTimeout(()=>ctrl.abort(),timeoutMs||25000);
   try{
     const r=await fetch(LIVE_ENDPOINT+'?t='+Date.now(),{signal:ctrl.signal,cache:'no-store'});
     clearTimeout(timer);
