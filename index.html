@@ -370,16 +370,32 @@ function processSquad(sq, nodes, report){
       bs.dSP+=r.sp; bs.dN++;
     }
     if(r.cat==='done'&&r.delivClosed){ d.histSP+=r.sp; d.histN++; }
+    // Rejeições ficam no nível da história (changelog do pai) → creditadas ao assignee do pai.
     if(active&&r.ids.includes(active.id)){
-      d.n++; d.sp+=r.sp; if(r.spNull)d.noSP++;
-      if(r.cat==='done'){d.dn++;d.dsp+=r.sp;}
-      else if(r.cat==='indeterminate')d.isp+=r.sp;
-      else d.tsp+=r.sp;
       d.rejCode+=r.rejCode||0; d.rejQA+=r.rejQA||0;
     }
   }
+  // Colunas da SPRINT ATUAL por dev = SUBTAREFAS (é nelas que o trabalho de dev acontece; a soma das
+  // subtarefas = porção dev da história). Histórias SEM subtarefa usam a porção dev do próprio card
+  // (Story Points total − Story point QA). Subtarefas CANCELADAS são excluídas. Assim eliminamos duas
+  // distorções: creditar o total (dev+QA) da história ao assignee do pai, e jogar em "Sem responsável"
+  // o trabalho que os devs fazem dentro das subtarefas. QA fica na linha própria (Story point QA).
+  const mkDev=nm=>devMap[nm]=devMap[nm]||{name:nm,n:0,dn:0,sp:0,dsp:0,isp:0,tsp:0,noSP:0,histSP:0,histN:0,part:new Set(),by:{},rejCode:0,rejQA:0};
+  const addCur=(nm,sp,cat)=>{const d=mkDev(nm); d.n++; if(sp==null){d.noSP++;} else {d.sp+=sp; if(cat==='done'){d.dn++;d.dsp+=sp;} else if(cat==='indeterminate'){d.isp+=sp;} else {d.tsp+=sp;}}};
+  if(active){
+    for(const r of recs){
+      if(r.cancelled||!r.ids.includes(active.id)) continue;
+      const live=(r.subs||[]).filter(s=>!(s.c==='done'&&/cancel|discard|descart/i.test(s.s||'')));
+      if(live.length){
+        for(const s of live) addCur(s.assignee||r.assignee||'Sem responsável', s.sp, s.c);
+      } else {
+        const devSP = r.spNull ? null : ((r.sp||0)-(r.spqa||0));
+        addCur(r.assignee||'Sem responsável', devSP, r.cat);
+      }
+    }
+  }
   const devs=Object.values(devMap)
-    .filter(d=>d.n>0||d.histN>0)
+    .filter(d=>d.n>0||d.histN>0||d.rejCode>0||d.rejQA>0)
     .map(d=>({...d,partN:d.part.size,avgSP:d.part.size?d.histSP/d.part.size:0,avgN:d.part.size?d.histN/d.part.size:0}))
     .sort((a,b)=>{if(a.name==='Sem responsável')return 1;if(b.name==='Sem responsável')return -1;return b.sp-a.sp;});
   // Cards com retrabalho por rejeição (sprint ativa): issues com 1+ transições para
@@ -740,12 +756,13 @@ function renderMap(){
     ):'';
     html+=reworkHtml;
     html+='<div class="panel"><h2>👤 Desempenho por Dev/QA — '+esc(sprintLabel(a))+'</h2>'+
-      '<table><thead><tr><th>Dev / QA</th><th>Issues atrib.</th><th>Issues concl.</th><th>SP atribuídos</th><th>SP entregues</th><th>SP em andamento</th><th>SP não iniciados</th><th>Sem SP</th><th>% SP entregue</th><th>Rejeições</th></tr></thead><tbody>'+rowsD+
-      '<tr class="total-row"><td>TOTAL devs (Story Points)</td><td>'+totD.n+'</td><td>'+totD.dn+'</td><td>'+fmtSP(totD.sp)+'</td><td>'+fmtSP(totD.dsp)+'</td><td>'+fmtSP(totD.isp)+'</td><td>'+fmtSP(totD.tsp)+'</td><td>'+totD.noSP+'</td>'+
+      '<p class="panel-sub"><strong>DEV</strong> = SP das <strong>subtarefas</strong> (é onde o trabalho de desenvolvimento está alocado — cada subtarefa com seu próprio responsável e status; a soma das subtarefas = a porção dev da história). Histórias <strong>sem subtarefa</strong> usam a porção dev do próprio card (<em>Story Points total − Story point QA</em>). Subtarefas canceladas são excluídas. A linha <strong>🧪 QA</strong> usa o campo <strong>Story point QA</strong> das histórias/tarefas/bugs (atribuído ao QA quando a issue entra nos status de QA; entregue só em DONE). <strong>Mesma regra de busca e exibição nas 3 squads.</strong></p>'+
+      '<table><thead><tr><th>Dev / QA</th><th>Itens atrib.</th><th>Itens concl.</th><th>SP atribuídos</th><th>SP entregues</th><th>SP em andamento</th><th>SP não iniciados</th><th>Sem SP</th><th>% SP entregue</th><th>Rejeições</th></tr></thead><tbody>'+rowsD+
+      '<tr class="total-row"><td>TOTAL devs (subtarefas)</td><td>'+totD.n+'</td><td>'+totD.dn+'</td><td>'+fmtSP(totD.sp)+'</td><td>'+fmtSP(totD.dsp)+'</td><td>'+fmtSP(totD.isp)+'</td><td>'+fmtSP(totD.tsp)+'</td><td>'+totD.noSP+'</td>'+
       '<td>'+(totD.sp>0?pct(totD.dsp,totD.sp)+'%':'—')+'</td>'+rejCell(totD.rejCode,totD.rejQA)+'</tr>'+
       qaRowHtml+
       '</tbody></table>'+
-      (qaRowHtml?'<p style="font-size:11px;color:var(--text-disabled);margin:8px 0 0">A linha 🧪 QA não soma no TOTAL: os pontos de QA já estão contidos no campo Story Points das issues (Story Points = DEV + QA).</p>':'')+
+      (qaRowHtml?'<p style="font-size:11px;color:var(--text-disabled);margin:8px 0 0">🧪 QA é linha complementar (não soma no TOTAL devs): <strong>DEV (subtarefas) + QA (Story point QA) = escopo da sprint</strong> — as duas visões são partes do mesmo Story Points (total = DEV + QA), sem sobreposição.</p>':'')+
       '</div>';
     // Matriz Dev/QA × Sprint: entregas (e alocação) por sprint + média final
     const realS=list.filter(s=>!String(s.id).startsWith('bl-'));

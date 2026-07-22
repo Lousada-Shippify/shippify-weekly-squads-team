@@ -93,11 +93,18 @@ async function fetchSubtasksByParent(auth, project, parentKeys) {
     const jql = `project = ${project} AND issuetype IN subtaskIssueTypes() AND parent IN (${chunk.join(',')})`;
     let token = null;
     for (let pg = 0; pg < 20; pg++) {
-      const body = { jql, fields: ['status', 'parent'], maxResults: 100, ...(token ? { nextPageToken: token } : {}) };
+      // Subtarefa carrega SP próprio (customfield_10028) e responsável próprio — é onde o trabalho
+      // de DEV realmente está alocado (a soma das subtarefas = porção dev da história).
+      const body = { jql, fields: ['status', 'parent', 'customfield_10028', 'assignee'], maxResults: 100, ...(token ? { nextPageToken: token } : {}) };
       const d = await jiraPost(auth, '/rest/api/3/search/jql', body);
       for (const st of (d.issues || [])) {
         const pk = st.fields?.parent?.key; if (!pk) continue;
-        (byParent[pk] = byParent[pk] || []).push({ s: st.fields.status?.name || '—', c: st.fields.status?.statusCategory?.key || 'new' });
+        (byParent[pk] = byParent[pk] || []).push({
+          s: st.fields.status?.name || '—',
+          c: st.fields.status?.statusCategory?.key || 'new',
+          sp: typeof st.fields.customfield_10028 === 'number' ? st.fields.customfield_10028 : null,
+          assignee: st.fields.assignee?.displayName || null,
+        });
       }
       if (d.isLast === false && d.nextPageToken) token = d.nextPageToken; else break;
     }
