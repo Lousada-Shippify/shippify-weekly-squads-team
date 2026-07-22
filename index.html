@@ -59,6 +59,15 @@
   .alert-box{background:rgba(193,89,30,.12);border-left:4px solid var(--laranja);padding:14px 18px;border-radius:0 8px 8px 0;margin:14px 0}
   .alert-box h4{margin:0 0 6px;color:var(--laranja);font-size:13.5px}
   .alert-box p{margin:0;font-family:Montserrat,sans-serif;font-size:12.5px;color:var(--text-primary)}
+  .panel h2 .pill{vertical-align:middle;margin-left:8px}
+  .rework-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;margin-top:14px}
+  .rework-card{display:flex;gap:12px;align-items:flex-start;background:var(--bg-card);border:1px solid var(--border);border-left:4px solid var(--magenta);border-radius:0 8px 8px 0;padding:12px 14px}
+  .rework-card .rc-count{font-family:Geologica,sans-serif;font-size:22px;font-weight:800;color:#E8557B;line-height:1.1;white-space:nowrap}
+  .rework-card .rc-title{font-size:13px;font-weight:600;margin-bottom:4px}
+  .rework-card .rc-title .rc-key{color:var(--turquesa)}
+  .rework-card .rc-title .rc-summary{color:var(--text-secondary);font-weight:400}
+  .rework-card .rc-meta{font-family:Montserrat,sans-serif;font-size:11.5px;color:var(--text-secondary)}
+  .rework-small{font-family:Montserrat,sans-serif;font-size:12px;color:var(--text-secondary);margin-top:10px}
   .loading{display:flex;align-items:center;gap:10px;padding:40px 0;justify-content:center;color:var(--text-secondary);font-size:13.5px;font-family:Montserrat,sans-serif}
   .spinner{width:16px;height:16px;border-radius:50%;border:2px solid var(--border);border-top-color:var(--verde);animation:spin .7s linear infinite}
   @keyframes spin{to{transform:rotate(360deg)}}
@@ -683,15 +692,16 @@ function renderMap(){
     const reworkBig=rework.filter(r=>r.total>=2);
     const reworkSmall=rework.filter(r=>r.total<2);
     const reworkHtml=rework.length?(
-      '<div class="panel"><h2>🔁 Cards com retrabalho por rejeição — '+esc(sprintLabel(a))+'</h2>'+
-      '<p class="panel-sub">Issues da sprint atual que já <strong>entraram</strong> em <strong>CODE REVIEW REJECTED</strong> e/ou <strong>REJECTED BY QA</strong> pelo menos uma vez (histórico completo do changelog, inclui rejeições já corrigidas).</p>'+
-      (reworkBig.length?reworkBig.map(r=>'<div class="deliv">• <strong>'+esc(r.key)+'</strong> · '+r.total+'x · '+esc(r.assignee)+' · '+r.rejCode+' de código / '+r.rejQA+' de QA · agora em <span class="pill '+(/conclu|done/i.test(r.status||'')?'green':'yellow')+'">'+esc(r.status||'—')+'</span> · <span style="color:var(--text-secondary)">'+esc(r.summary||'')+'</span></div>').join(''):'')+
-      (reworkSmall.length?'<div class="deliv" style="color:var(--text-secondary)">+ '+reworkSmall.length+' card(s) com 1 rejeição: '+reworkSmall.map(r=>esc(r.key)).join(', ')+'</div>':'')+
+      '<div class="panel"><h2>🔁 Cards com retrabalho por rejeição'+(reworkBig.length?' <span class="pill red">'+reworkBig.length+' com 2+ rejeições</span>':'')+'</h2>'+
+      (reworkBig.length?'<div class="rework-grid">'+reworkBig.map(r=>
+        '<div class="rework-card"><div class="rc-count">'+r.total+'x</div><div><div class="rc-title"><span class="rc-key">'+esc(r.key)+'</span> · <span class="rc-summary">'+esc((r.summary||'').slice(0,60))+'</span></div>'+
+        '<div class="rc-meta">'+esc(r.assignee)+' · '+r.rejCode+' de código / '+r.rejQA+' de QA · agora em <span class="pill '+(/conclu|done/i.test(r.status||'')?'green':'yellow')+'">'+esc(r.status||'—')+'</span></div></div></div>'
+      ).join('')+'</div>':'')+
+      (reworkSmall.length?'<div class="rework-small">+ '+reworkSmall.length+' card(s) com 1 rejeição.</div>':'')+
       '</div>'
     ):'';
     html+=reworkHtml;
     html+='<div class="panel"><h2>👤 Desempenho por Dev/QA — '+esc(sprintLabel(a))+'</h2>'+
-      '<p class="panel-sub">Devs: responsável (assignee) das issues da sprint atual, SP = campo <strong>Story Points</strong> (DEV + QA), sem subtarefas e sem canceladas. <strong>Linha 🧪 QA</strong>: pontos do campo <strong>Story point QA</strong> das histórias/tarefas/bugs. A responsabilidade (assignee) nunca passa para o QA — a issue é <strong>atribuída ao QA quando entra nos status de QA</strong>: <strong>não iniciado</strong> = PENDING QA · <strong>em andamento</strong> = ON TESTING (ON GOING QA), QA VERIFIED (APPROVED BY QA), QA DENIED (REJECTED BY QA) · <strong>entregue apenas quando DONE</strong>. Issues ainda em dev não contam para o QA. “Sem SP” (QA) = issues no fluxo de QA sem estimativa de QA. <strong>Rejeições</strong> = quantas vezes as issues atribuídas ao dev entraram em CODE REVIEW REJECTED (C) ou REJECTED BY QA (QA), pelo changelog do Jira.</p>'+
       '<table><thead><tr><th>Dev / QA</th><th>Issues atrib.</th><th>Issues concl.</th><th>SP atribuídos</th><th>SP entregues</th><th>SP em andamento</th><th>SP não iniciados</th><th>Sem SP</th><th>% SP entregue</th><th>Rejeições</th></tr></thead><tbody>'+rowsD+
       '<tr class="total-row"><td>TOTAL devs (Story Points)</td><td>'+totD.n+'</td><td>'+totD.dn+'</td><td>'+fmtSP(totD.sp)+'</td><td>'+fmtSP(totD.dsp)+'</td><td>'+fmtSP(totD.isp)+'</td><td>'+fmtSP(totD.tsp)+'</td><td>'+totD.noSP+'</td>'+
       '<td>'+(totD.sp>0?pct(totD.dsp,totD.sp)+'%':'—')+'</td>'+rejCell(totD.rejCode,totD.rejQA)+'</tr>'+
