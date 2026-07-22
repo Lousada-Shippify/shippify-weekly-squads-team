@@ -60,7 +60,10 @@ async function searchAll(auth, jql) {
   try {
     let token = null;
     for (let i = 0; i < 20; i++) {
-      const body = { jql, fields: FIELDS, expand: ['changelog'], maxResults: 100, ...(token ? { nextPageToken: token } : {}) };
+      // No endpoint novo (/search/jql), "expand" é STRING (não array) — enviar array quebra a
+      // chamada (erro de deserialização) e derruba pro fallback legado, que a Atlassian já
+      // desligou de vez em 2026 (410). Descoberto em 22/07/2026 depois do deploy ficar 502.
+      const body = { jql, fields: FIELDS, expand: 'changelog', maxResults: 100, ...(token ? { nextPageToken: token } : {}) };
       const d = await jiraPost(auth, '/rest/api/3/search/jql', body);
       out.push(...(d.issues || []));
       if (d.isLast === false && d.nextPageToken) token = d.nextPageToken; else break;
