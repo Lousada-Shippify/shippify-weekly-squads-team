@@ -90,7 +90,7 @@
   /* Barra "Progresso do sprint" com etiquetas de subtarefas sobrepostas na faixa "Em andamento" */
   .sbar-wrap{position:relative;margin:6px 0 6px}
   .sbar-wrap .sbar.lg{height:26px;margin:0}
-  .sbar-ip-overlay{position:absolute;top:0;height:26px;display:flex;align-items:center;justify-content:space-evenly;gap:6px;pointer-events:none;overflow:visible}
+  .sbar-ip-overlay{position:absolute;top:0;right:6px;height:26px;display:flex;align-items:center;justify-content:flex-start;gap:7px;padding-left:6px;pointer-events:none;overflow:visible}
   .ip-tag{font-family:Geologica,sans-serif;font-size:10.5px;font-weight:600;line-height:1;white-space:nowrap;padding:3px 9px;border-radius:11px;box-shadow:0 1px 3px rgba(0,0,0,.4);border:1px solid rgba(0,0,0,.15)}
   .ip-tag b{font-weight:800;margin-right:3px}
   .ip-tag.ip-yellow{background:#F2D98A;color:#4A3A08}
@@ -551,7 +551,7 @@ function renderPlan(){
           const cls=st=>/reject|deni|block/i.test(st)?'red':(/qa|review|test|deploy|wait|pend/i.test(st)?'yellow':'blue');
           // Etiquetas de subtarefas em andamento SOBREPOSTAS na faixa azul "Em andamento" da barra.
           const tags=ipsub.map(kv=>'<span class="ip-tag ip-'+cls(kv[0])+'"><b>'+kv[1]+'</b> '+esc(kv[0])+'</span>').join('');
-          const overlay=(ipsub.length&&pi>0)?'<div class="sbar-ip-overlay" style="left:'+pd+'%;width:'+pi+'%">'+tags+'</div>':'';
+          const overlay=(ipsub.length&&pi>0)?'<div class="sbar-ip-overlay" style="left:'+pd+'%">'+tags+'</div>':'';
           return '<div class="sbar-wrap"><div class="sbar lg"><div style="background:var(--verde);width:'+pd+'%"></div><div style="background:var(--turquesa);width:'+pi+'%"></div></div>'+overlay+'</div>'+
           (ipsub.length?'<div class="ip-cap">Etiquetas na faixa “Em andamento” = <strong>subtarefas</strong> em andamento por status ('+tot+' no total) — é onde o trabalho realmente acontece</div>':'')+
           '<div class="sbar-legend">'+
