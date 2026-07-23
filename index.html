@@ -394,8 +394,12 @@ function processSquad(sq, nodes, report){
       }
     }
   }
+  // A pessoa de QA da squad NÃO aparece nas linhas de DEV (ela é representada só na linha 🧪 QA).
+  // Casa pelo nome que precede " — QA" no QA_OWNER (ex.: "Nathaly Brasiliano").
+  const qaLead=(QA_OWNER[sq.code]||'').split(' — ')[0].trim();
+  const isQAperson=nm=>!!qaLead && (nm===qaLead || nm.startsWith(qaLead+' ') || qaLead.startsWith(nm+' '));
   const devs=Object.values(devMap)
-    .filter(d=>d.n>0||d.histN>0||d.rejCode>0||d.rejQA>0)
+    .filter(d=>(d.n>0||d.histN>0||d.rejCode>0||d.rejQA>0) && !isQAperson(d.name))
     .map(d=>({...d,partN:d.part.size,avgSP:d.part.size?d.histSP/d.part.size:0,avgN:d.part.size?d.histN/d.part.size:0}))
     .sort((a,b)=>{if(a.name==='Sem responsável')return 1;if(b.name==='Sem responsável')return -1;return b.sp-a.sp;});
   // Cards com retrabalho por rejeição (sprint ativa): issues com 1+ transições para
@@ -428,14 +432,16 @@ function processSquad(sq, nodes, report){
       }
       if(doneQA&&r.delivClosed){ qa.histSP+=v; qa.histN++; }
     }
+    // SP atribuídos ao QA = TOTAL real de Story point QA alocado em TODAS as histórias/tarefas/bugs
+    // da sprint (soma de todos os cf 10546 > 0), independente do status. O breakdown mostra em que
+    // fase esse trabalho de QA está: DONE = entregue · status de QA (ON TESTING/VERIFIED/DENIED) =
+    // em andamento · ainda não chegou no QA (dev/PENDING QA) = não iniciado.
     if(active&&r.ids.includes(active.id)){
-      if(!assignedToQA) continue;                 // ainda em dev → não é do QA
-      if(v==null){ qa.noSP++; continue; }         // no fluxo de QA sem estimativa de QA
-      if(v<=0) continue;
+      if(v==null||v<=0) continue;                 // história sem estimativa de QA não gera trabalho de QA
       qa.n++; qa.sp+=v;
       if(doneQA){ qa.dn++; qa.dsp+=v; }
       else if(inQA) qa.isp+=v;                    // ON TESTING · QA VERIFIED · QA DENIED
-      else qa.tsp+=v;                             // PENDING QA = atribuído, não iniciado
+      else qa.tsp+=v;                             // ainda não chegou no QA (dev / PENDING QA) = não iniciado
     }
   }
   const qaRow={...qa,partN:qa.part.size,avgSP:qa.part.size?qa.histSP/qa.part.size:0,avgN:qa.part.size?qa.histN/qa.part.size:0};
