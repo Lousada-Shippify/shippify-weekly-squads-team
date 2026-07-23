@@ -157,6 +157,10 @@ const QA_OWNER = {
 };
 const QA_PROG_RE = /(ON\s*GOING\s*QA|ON\s*TESTING|APPROVED\s*BY\s*QA|QA\s*VERIFIED|REJECTED\s*BY\s*QA|QA\s*DENIED)/i;
 const QA_WAIT_RE = /PENDING\s*QA/i;
+// Pessoas que NÃO são desenvolvedoras (PM, Design, etc.) — não entram nas linhas de DEV nem no
+// TOTAL devs, mesmo que apareçam como responsáveis de alguma subtarefa/história. Ex.: Gabriel
+// Goldner Silva (PM) e Rayanne Ferreira (Design) na AE. QA já é tratado à parte via QA_OWNER.
+const NON_DEV = ['Gabriel Goldner Silva', 'Rayanne Ferreira'];
 const SQUADS = [
   // NENHUMA squad inclui subtarefas: com a migração dos pontos para o campo Story Points
   // (DEV + QA) nos cards principais, incluir subtasks na AE duplicava pontos.
@@ -398,8 +402,9 @@ function processSquad(sq, nodes, report){
   // Casa pelo nome que precede " — QA" no QA_OWNER (ex.: "Nathaly Brasiliano").
   const qaLead=(QA_OWNER[sq.code]||'').split(' — ')[0].trim();
   const isQAperson=nm=>!!qaLead && (nm===qaLead || nm.startsWith(qaLead+' ') || qaLead.startsWith(nm+' '));
+  const isNonDev=nm=>NON_DEV.some(x=>nm===x||nm.startsWith(x+' ')||x.startsWith(nm+' '));
   const devs=Object.values(devMap)
-    .filter(d=>(d.n>0||d.histN>0||d.rejCode>0||d.rejQA>0) && !isQAperson(d.name))
+    .filter(d=>(d.n>0||d.histN>0||d.rejCode>0||d.rejQA>0) && !isQAperson(d.name) && !isNonDev(d.name))
     .map(d=>({...d,partN:d.part.size,avgSP:d.part.size?d.histSP/d.part.size:0,avgN:d.part.size?d.histN/d.part.size:0}))
     .sort((a,b)=>{if(a.name==='Sem responsável')return 1;if(b.name==='Sem responsável')return -1;return b.sp-a.sp;});
   // Cards com retrabalho por rejeição (sprint ativa): issues com 1+ transições para
