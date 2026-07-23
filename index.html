@@ -762,7 +762,7 @@ function renderMap(){
       '<td>'+(totD.sp>0?pct(totD.dsp,totD.sp)+'%':'—')+'</td>'+rejCell(totD.rejCode,totD.rejQA)+'</tr>'+
       qaRowHtml+
       '</tbody></table>'+
-      (qaRowHtml?'<p style="font-size:11px;color:var(--text-disabled);margin:8px 0 0">🧪 QA é linha complementar (não soma no TOTAL devs): <strong>DEV (subtarefas) + QA (Story point QA) = escopo da sprint</strong> — as duas visões são partes do mesmo Story Points (total = DEV + QA), sem sobreposição.</p>':'')+
+      (qaRowHtml?'<p style="font-size:11px;color:var(--text-disabled);margin:8px 0 0">🧪 QA é linha complementar (não soma no TOTAL devs). <strong>DEV</strong> = pontos alocados nas <strong>subtarefas</strong> (trabalho de desenvolvimento); <strong>QA</strong> = <strong>Story point QA</strong> das histórias, contabilizado quando a issue entra no fluxo de QA. São partes do mesmo Story Points (total = DEV + QA), medidas na granularidade real de cada uma — por isso podem não fechar exatamente com o escopo do card (subtarefas têm estimativa própria e o QA só entra ao chegar no fluxo de QA).</p>':'')+
       '</div>';
     // Matriz Dev/QA × Sprint: entregas (e alocação) por sprint + média final
     const realS=list.filter(s=>!String(s.id).startsWith('bl-'));
