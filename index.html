@@ -594,15 +594,18 @@ function renderPlan(){
   const retRows=SQUADS.map(sq=>{
     const r=(DATA[sq.code]||{}).ret; if(!r) return '';
     const c=r.cur||{irq:null,irc:null,baseQA:0,baseCR:0,rejQA:0,rejCode:0};
+    // Sem nenhum evento no histórico = índice não instrumentado (não é mérito da squad)
+    const noQA=(r.all.rejQA||0)===0, noCR=(r.all.rejCode||0)===0;
+    const naPill='<span class="pill" style="background:rgba(30,164,193,.15);color:var(--turquesa)">sem eventos</span>';
     return '<tr><td><strong>'+sq.name+'</strong> <span class="pill gray">'+sq.code+'</span></td>'+
-      '<td>'+retPill(c.irq)+'<br><small style="color:var(--text-secondary)">'+c.rejQA+' ÷ '+c.baseQA+' testados</small></td>'+
-      '<td>'+retPill(c.irc)+'<br><small style="color:var(--text-secondary)">'+c.rejCode+' ÷ '+c.baseCR+' em review</small></td>'+
+      '<td>'+(noQA?naPill:retPill(c.irq))+'<br><small style="color:var(--text-secondary)">'+c.rejQA+' ÷ '+c.baseQA+' testados</small></td>'+
+      '<td>'+(noCR?naPill:retPill(c.irc))+'<br><small style="color:var(--text-secondary)">'+c.rejCode+' ÷ '+c.baseCR+' em review</small></td>'+
       '<td>'+retPill(r.all.irq)+'<br><small style="color:var(--text-secondary)">'+r.all.sprints+' sprints · '+r.all.rejQA+' ÷ '+r.all.baseQA+'</small></td>'+
       '<td>'+retPill(r.all.irc)+'<br><small style="color:var(--text-secondary)">'+r.all.rejCode+' ÷ '+r.all.baseCR+'</small></td>'+
       '<td><strong>QA '+retFactor(r.all.irq)+'</strong> · Dev '+retFactor(r.all.irc)+'</td></tr>';
   }).join('');
   html+='<div class="panel"><h2>🎯 Índice de retorno — retrabalho médio por card <span class="pill blue">0 é ótimo</span></h2>'+
-    '<p class="panel-sub">Quantas vezes, em média, um card <strong>volta</strong> antes de passar. <strong>Retorno QA</strong> = entradas em REJECTED BY QA / QA DENIED ÷ cards que chegaram ao QA · <strong>Retorno código</strong> = entradas em CODE REVIEW REJECTED ÷ cards que entraram em code review (changelog do Jira, inclui reincidências). Faixas: <strong style="color:var(--verde)">0 ótimo</strong> · ≤0,25 bom · ≤0,50 atenção · ≤1,00 ruim · &gt;1,00 crítico. O <strong>fator</strong> (1 + índice histórico) é o multiplicador sugerido para a pontuação prévia no refinamento.</p>'+
+    '<p class="panel-sub">Quantas vezes, em média, um card <strong>volta</strong> antes de passar. <strong>Retorno QA</strong> = entradas em REJECTED BY QA / QA DENIED ÷ cards que chegaram ao QA · <strong>Retorno código</strong> = entradas em CODE REVIEW REJECTED ÷ cards que entraram em code review (changelog do Jira, inclui reincidências). Faixas: <strong style="color:var(--verde)">0 ótimo</strong> · ≤0,25 bom · ≤0,50 atenção · ≤1,00 ruim · &gt;1,00 crítico. O <strong>fator</strong> (1 + índice histórico) é o multiplicador sugerido para a pontuação prévia no refinamento. <strong>“sem eventos”</strong> = a squad nunca registrou aquele status de rejeição no histórico: o índice não é 0 por qualidade, é falta de instrumentação no fluxo do board — verificar antes de comparar squads.</p>'+
     '<table><thead><tr><th>Squad</th><th>↩︎ Retorno QA (sprint atual)</th><th>↩︎ Retorno código (sprint atual)</th><th>Média histórica QA</th><th>Média histórica código</th><th>Fator de re-estimativa</th></tr></thead><tbody>'+retRows+'</tbody></table></div>';
 
   for(const sq of SQUADS){
@@ -845,7 +848,11 @@ function renderMap(){
         '</div><div style="display:flex;gap:4px;margin-top:3px">'+
         hs.map(h=>'<span style="flex:1;text-align:center;font-size:8px;line-height:1.3;color:'+(h.state==='active'?retBand(h[pick]).c:'var(--text-disabled)')+'">'+esc(h.name.replace(/^(EE\s+)?Sprint\s+/,'S'))+'<br><b>'+fmtIdx(h[pick])+'</b></span>').join('')+
         '</div>';};
-    const retTile=(title,v,rej,base,hint,affected,pick,reading)=>{const b=retBand(v);
+    const retTile=(title,v,rej,base,hint,affected,pick,reading,noEvents,statusName)=>{
+      // 0,00 sem NENHUM evento no histórico da squad não é "ótimo" — é falta de instrumentação.
+      // Nesse caso o rótulo avisa, em vez de premiar a squad por um dado que não existe.
+      const b=noEvents?{l:'SEM EVENTOS',c:'var(--turquesa)'}:retBand(v);
+      if(noEvents) reading='Nenhum "'+statusName+'" registrado no histórico da squad — confirme se o time usa esse status';
       return '<div class="kpi-card" style="border-left:3px solid '+b.c+'">'+
         '<div class="label">'+title+'</div>'+
         '<div class="value" style="color:'+b.c+'">'+fmtIdx(v)+'</div>'+
@@ -865,9 +872,11 @@ function renderMap(){
       '<p class="panel-sub">Quantas vezes, em média, um card volta antes de passar — <strong>0 é ótimo</strong>. Base = cards que efetivamente chegaram ao estágio (changelog do Jira). Alimenta a re-estimativa: <strong>estimativa ajustada = estimativa prévia × (1 + índice)</strong>.</p>'+
       '<div class="kpi-grid">'+
         retTile('↩︎ Retorno QA (IRQ)',rc.irq,rc.rejQA,rc.baseQA,'que chegaram ao QA',rc.cardsQA||0,'irq',
-          rc.irq!=null?('Cada card testado volta ~'+fmtIdx(rc.irq)+'× antes de passar'):'')+
+          rc.irq!=null?('Cada card testado volta ~'+fmtIdx(rc.irq)+'× antes de passar'):'',
+          (R.all.rejQA||0)===0,'REJECTED BY QA')+
         retTile('↩︎ Retorno de código (IRC)',rc.irc,rc.rejCode,rc.baseCR,'que entraram em code review',rc.cardsCR||0,'irc',
-          rc.irc?('1 em cada '+Math.round(1/rc.irc)+' PRs volta'):(rc.irc===0?'Nenhum PR voltou nesta sprint':''))+
+          rc.irc?('1 em cada '+Math.round(1/rc.irc)+' PRs volta'):(rc.irc===0?'Nenhum PR voltou nesta sprint':''),
+          (R.all.rejCode||0)===0,'CODE REVIEW REJECTED')+
         '<div class="kpi-card" style="border-left:3px solid var(--turquesa)">'+
           '<div class="label">Fator de re-estimativa</div>'+
           '<div class="value" style="font-size:22px">QA '+retFactor(rc.irq)+' <span style="color:var(--text-disabled);font-size:15px">/</span> Dev '+retFactor(rc.irc)+'</div>'+

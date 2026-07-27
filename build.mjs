@@ -140,20 +140,58 @@ async function fetchSubtasksByParent(project, parentKeys) {
 // Conta quantas vezes a issue ENTROU em "CODE REVIEW REJECTED" (retrabalho de código) e em
 // "REJECTED BY QA"/"QA DENIED" (retrabalho de QA), a partir do changelog completo do Jira.
 // Inclui rejeições já corrigidas e reincidências (não é só o status atual).
-function countRejections(issue) {
-  const histories = issue.changelog?.histories || [];
+// ── Changelog COMPLETO (endpoint dedicado bulkfetch) ─────────────────────────────
+// O expand=changelog do /search devolve no máximo as ~100 transições mais recentes por issue.
+// Em cards antigos/longos isso descarta rejeições velhas e SUBESTIMA o índice de retorno
+// (descoberto em 27/07/2026: o CODE REVIEW REJECTED de OE-140 aparecia no dashboard OE, que já
+// usava este endpoint, e não aqui). Se o bulkfetch falhar, devolve null e caímos no expand.
+async function fetchChangelogs(ids) {
+  const map = new Map();
+  try {
+    for (let i = 0; i < ids.length; i += 100) {
+      const chunk = ids.slice(i, i + 100);
+      let token = null;
+      for (let page = 0; page < 40; page++) {
+        const body = { issueIdsOrKeys: chunk, fieldIds: ['status'], maxResults: 1000, ...(token ? { nextPageToken: token } : {}) };
+        const d = await post(`https://${SITE}/rest/api/3/changelog/bulkfetch`, body);
+        for (const entry of (d.issueChangeLogs || [])) {
+          const k = String(entry.issueId);
+          if (!map.has(k)) map.set(k, []);
+          map.get(k).push(...(entry.changeHistories || []));
+        }
+        if (d.isLast === false && d.nextPageToken) token = d.nextPageToken; else break;
+      }
+    }
+    return map;
+  } catch (e) {
+    console.warn('changelog/bulkfetch falhou, usando expand=changelog (histórico pode vir truncado):', e.message);
+    return null;
+  }
+}
+
+// Transições de status da issue, do changelog completo (bulkfetch) ou, em fallback, do expand.
+function statusTransitions(issue, bulk) {
+  const out = [];
+  const hs = (bulk && bulk.get(String(issue.id))) || issue.changelog?.histories || [];
+  for (const h of hs) {
+    for (const it of (h.items || [])) {
+      if (it.field !== 'status' && it.fieldId !== 'status') continue;
+      out.push({ to: it.toString || '', at: h.created });
+    }
+  }
+  return out;
+}
+
+function countRejections(issue, bulk) {
   let rejCode = 0, rejQA = 0, lastAt = null, lastWhat = null;
   // touchQA / touchCR: a issue entrou pelo menos uma vez no estágio (base do índice de retorno).
   let touchQA = false, touchCR = false;
-  for (const h of histories) {
-    for (const it of (h.items || [])) {
-      if (it.field !== 'status') continue;
-      const to = it.toString || '';
-      if (QA_STAGE_RE.test(to)) touchQA = true;
-      if (CR_STAGE_RE.test(to)) touchCR = true;
-      if (REJECT_CODE_RE.test(to)) { rejCode++; lastAt = h.created; lastWhat = 'CODE REVIEW REJECTED'; }
-      else if (REJECT_QA_RE.test(to)) { rejQA++; lastAt = h.created; lastWhat = 'REJECTED BY QA'; }
-    }
+  for (const t of statusTransitions(issue, bulk)) {
+    const to = t.to;
+    if (QA_STAGE_RE.test(to)) touchQA = true;
+    if (CR_STAGE_RE.test(to)) touchCR = true;
+    if (REJECT_CODE_RE.test(to)) { rejCode++; lastAt = t.at; lastWhat = 'CODE REVIEW REJECTED'; }
+    else if (REJECT_QA_RE.test(to)) { rejQA++; lastAt = t.at; lastWhat = 'REJECTED BY QA'; }
   }
   // Fallbacks: status atual já no estágio (issue criada direto nele) ou rejeição registrada.
   const cur = issue.fields?.status?.name || '';
@@ -163,9 +201,9 @@ function countRejections(issue) {
 }
 
 // Mantém exatamente os caminhos de campo que o front-end (processSquad) usa
-function slim(issue) {
+function slim(issue, bulk) {
   const f = issue.fields || {};
-  const rej = countRejections(issue);
+  const rej = countRejections(issue, bulk);
   return {
     key: issue.key,
     fields: {
@@ -199,10 +237,12 @@ for (const [p, boardId] of PROJECTS) {
     .filter(i => (i.fields?.customfield_10020 || []).some(s => s.state === 'active' && s.boardId === boardId))
     .map(i => i.key);
   const subByParent = activeKeys.length ? await fetchSubtasksByParent(p, activeKeys) : {};
-  squads[p] = issues.map(i => { const o = slim(i); o.subs = subByParent[i.key] || []; return o; });
+  const bulk = await fetchChangelogs(issues.map(i => i.id).filter(Boolean));
+  squads[p] = issues.map(i => { const o = slim(i, bulk); o.subs = subByParent[i.key] || []; return o; });
   sprintReport[p] = await getSprintReport(boardId);
   const subCount = Object.values(subByParent).reduce((a, v) => a + v.length, 0);
-  console.log(`${p}: ${issues.length} issues · ${subCount} subtarefas (sprint ativa)` + (sprintReport[p] ? ` · sprint report: ${sprintReport[p].completedSP}/${sprintReport[p].scopeSP} SP` : ''));
+  const totRej = squads[p].reduce((a, i) => a + i.rejCode + i.rejQA, 0);
+  console.log(`${p}: ${issues.length} issues · ${subCount} subtarefas (sprint ativa) · ${totRej} rejeições (changelog ${bulk ? 'completo' : 'truncado — bulkfetch falhou'})` + (sprintReport[p] ? ` · sprint report: ${sprintReport[p].completedSP}/${sprintReport[p].scopeSP} SP` : ''));
 }
 
 const data = { generatedAt: new Date().toISOString(), squads, sprintReport };
