@@ -157,6 +157,22 @@ const QA_OWNER = {
 };
 const QA_PROG_RE = /(ON\s*GOING\s*QA|ON\s*TESTING|APPROVED\s*BY\s*QA|QA\s*VERIFIED|REJECTED\s*BY\s*QA|QA\s*DENIED)/i;
 const QA_WAIT_RE = /PENDING\s*QA/i;
+// ── ÍNDICE DE RETORNO (retrabalho médio por card) ────────────────────────────────
+// Base (denominador) = cards que CHEGARAM ao estágio, não o escopo inteiro da sprint.
+// touchQA/touchCR vêm do changelog (build.mjs/worker.js); fallback pelo status atual.
+const RET_QA_RE = /(PENDING\s*QA|ON\s*GOING\s*QA|ON\s*TESTING|APPROVED\s*BY\s*QA|QA\s*VERIFIED|REJECTED\s*BY\s*QA|QA\s*DENIED)/i;
+const RET_CR_RE = /(CODE\s*REVIEW|PR\s*REVIEW|PULL\s*REQUEST)/i;
+// Pós-estágio: aguardando deploy/release ou concluído ⇒ passou por QA (e antes pelo code review).
+// Só usado quando o snapshot ainda não traz touchQA/touchCR do changelog.
+const RET_POST_RE = /(WAITING\s*FOR\s*DEPLOY|RELEASE|CONCLU|DONE|CLOSED|RESOLVED)/i;
+const retIdx = (rej, base) => base > 0 ? rej / base : null;
+const fmtIdx = v => (v === null || v === undefined || isNaN(v)) ? '—' : (Math.round(v*100)/100).toFixed(2).replace('.', ',');
+// 0 = ótimo · ≤0,25 bom · ≤0,50 atenção · ≤1,00 ruim · >1,00 crítico
+const retBand = v => v===null||v===undefined||isNaN(v) ? {l:'sem base',c:'var(--text-disabled)'}
+  : v===0 ? {l:'ÓTIMO',c:'var(--verde)'} : v<=0.25 ? {l:'BOM',c:'var(--amarelo)'}
+  : v<=0.5 ? {l:'ATENÇÃO',c:'var(--laranja)'} : v<=1 ? {l:'RUIM',c:'#E8557B'} : {l:'CRÍTICO',c:'#E8557B'};
+const retPill = v => { const b=retBand(v); return '<span class="pill" style="background:'+b.c+'26;color:'+b.c+'">'+fmtIdx(v)+'</span>'; };
+const retFactor = v => (v===null||v===undefined||isNaN(v)) ? '—' : ('×'+(Math.round((1+v)*100)/100).toFixed(2).replace('.',','));
 // Pessoas que NÃO são desenvolvedoras (PM, Design, etc.) — não entram nas linhas de DEV nem no
 // TOTAL devs, mesmo que apareçam como responsáveis de alguma subtarefa/história. Ex.: Gabriel
 // Goldner Silva (PM) e Rayanne Ferreira (Design) na AE. QA já é tratado à parte via QA_OWNER.
@@ -259,6 +275,12 @@ function processSquad(sq, nodes, report){
       assignee:(f.assignee&&f.assignee.displayName)||null, spNull:f[SP_FIELD]==null,
       spqa:(typeof f[QA_FIELD]==='number'?f[QA_FIELD]:null),
       rejCode:n.rejCode||0, rejQA:n.rejQA||0, lastRejAt:n.lastRejAt||null, lastRejWhat:n.lastRejWhat||null,
+      touchQA:(n.touchQA===undefined
+        ? ((n.rejQA||0)>0||RET_QA_RE.test((f.status&&f.status.name)||'')||RET_POST_RE.test((f.status&&f.status.name)||''))
+        : !!(n.touchQA||(n.rejQA||0)>0)),
+      touchCR:(n.touchCR===undefined
+        ? ((n.rejCode||0)>0||RET_CR_RE.test((f.status&&f.status.name)||'')||RET_QA_RE.test((f.status&&f.status.name)||'')||RET_POST_RE.test((f.status&&f.status.name)||''))
+        : !!(n.touchCR||(n.rejCode||0)>0)),
       subs:Array.isArray(n.subs)?n.subs:[]});
     const rec=recs[recs.length-1];
     for(const s of sorted){ const agg=getS(s); if(cancelled){agg.cancSP+=sp;agg.cancN++;} else {agg.scope+=sp;agg.count++;} }
@@ -363,7 +385,7 @@ function processSquad(sq, nodes, report){
   for(const r of recs){
     if(r.cancelled) continue;
     const nm=r.assignee||'Sem responsável';
-    const d=devMap[nm]=devMap[nm]||{name:nm,n:0,dn:0,sp:0,dsp:0,isp:0,tsp:0,noSP:0,histSP:0,histN:0,part:new Set(),by:{},rejCode:0,rejQA:0};
+    const d=devMap[nm]=devMap[nm]||{name:nm,n:0,dn:0,sp:0,dsp:0,isp:0,tsp:0,noSP:0,histSP:0,histN:0,part:new Set(),by:{},rejCode:0,rejQA:0,baseQA:0,baseCR:0};
     for(const sid of r.ids){
       if(closedIds.has(sid)) d.part.add(sid);
       const bs=d.by[sid]=d.by[sid]||{aSP:0,aN:0,dSP:0,dN:0};
@@ -377,6 +399,8 @@ function processSquad(sq, nodes, report){
     // Rejeições ficam no nível da história (changelog do pai) → creditadas ao assignee do pai.
     if(active&&r.ids.includes(active.id)){
       d.rejCode+=r.rejCode||0; d.rejQA+=r.rejQA||0;
+      if(r.touchQA) d.baseQA++;                 // base do índice de retorno de QA da pessoa
+      if(r.touchCR) d.baseCR++;                 // base do índice de retorno de código da pessoa
     }
   }
   // Colunas da SPRINT ATUAL por dev = SUBTAREFAS (é nelas que o trabalho de dev acontece; a soma das
@@ -384,7 +408,7 @@ function processSquad(sq, nodes, report){
   // (Story Points total − Story point QA). Subtarefas CANCELADAS são excluídas. Assim eliminamos duas
   // distorções: creditar o total (dev+QA) da história ao assignee do pai, e jogar em "Sem responsável"
   // o trabalho que os devs fazem dentro das subtarefas. QA fica na linha própria (Story point QA).
-  const mkDev=nm=>devMap[nm]=devMap[nm]||{name:nm,n:0,dn:0,sp:0,dsp:0,isp:0,tsp:0,noSP:0,histSP:0,histN:0,part:new Set(),by:{},rejCode:0,rejQA:0};
+  const mkDev=nm=>devMap[nm]=devMap[nm]||{name:nm,n:0,dn:0,sp:0,dsp:0,isp:0,tsp:0,noSP:0,histSP:0,histN:0,part:new Set(),by:{},rejCode:0,rejQA:0,baseQA:0,baseCR:0};
   const addCur=(nm,sp,cat)=>{const d=mkDev(nm); d.n++; if(sp==null){d.noSP++;} else {d.sp+=sp; if(cat==='done'){d.dn++;d.dsp+=sp;} else if(cat==='indeterminate'){d.isp+=sp;} else {d.tsp+=sp;}}};
   if(active){
     for(const r of recs){
@@ -470,7 +494,28 @@ function processSquad(sq, nodes, report){
       openN:openOut.length, openSP:openOut.reduce((x,r)=>x+r.sp,0),
       cancN:cancIn.length, cancSP:cancIn.reduce((x,r)=>x+r.sp,0)};
   }
-  return {squad:sq, sprints:list, active, issueCount:nodes.length, devs, qa:qaRow, review, reworkCards};
+  // ── ÍNDICE DE RETORNO por sprint (todas) + sprint atual + média geral ──────────
+  const retAgg=new Map();
+  for(const r of recs){
+    if(r.cancelled) continue;
+    for(const sid of r.ids){
+      if(!retAgg.has(sid)) retAgg.set(sid,{baseQA:0,baseCR:0,rejQA:0,rejCode:0});
+      const a=retAgg.get(sid);
+      if(r.touchQA) a.baseQA++;
+      if(r.touchCR) a.baseCR++;
+      a.rejQA+=r.rejQA||0; a.rejCode+=r.rejCode||0;
+    }
+  }
+  const retHist=list.filter(s=>!String(s.id).startsWith('bl-')&&retAgg.has(s.id)).map(s=>{
+    const a=retAgg.get(s.id);
+    return {id:s.id,name:sprintLabel(s),state:s.state,...a,irq:retIdx(a.rejQA,a.baseQA),irc:retIdx(a.rejCode,a.baseCR)};
+  });
+  const retAll=retHist.reduce((x,h)=>({baseQA:x.baseQA+h.baseQA,baseCR:x.baseCR+h.baseCR,rejQA:x.rejQA+h.rejQA,rejCode:x.rejCode+h.rejCode}),{baseQA:0,baseCR:0,rejQA:0,rejCode:0});
+  retAll.irq=retIdx(retAll.rejQA,retAll.baseQA); retAll.irc=retIdx(retAll.rejCode,retAll.baseCR);
+  retAll.sprints=retHist.length;
+  const retCur=active?(retHist.find(h=>h.id===active.id)||null):null;
+  const ret={cur:retCur,hist:retHist,all:retAll};
+  return {squad:sq, sprints:list, active, issueCount:nodes.length, devs, qa:qaRow, review, reworkCards, ret};
 }
 
 // Tenta consultar o Jira agora mesmo via Worker (tempo real). Timeout para não travar a página
@@ -542,6 +587,21 @@ function renderPlan(){
     '<table><thead><tr><th>Squad</th><th>Sprint Goal</th><th>Scope SP</th><th>Completed SP</th><th>Remaining SP</th><th>% Done (SP)</th><th>% Done (issues)</th></tr></thead><tbody>'+rows.join('')+
     '<tr class="total-row"><td>Total</td><td>—</td><td>'+fmtSP(totScope)+'</td><td>'+fmtSP(totDone)+'</td><td>'+fmtSP(totScope-totDone)+'</td><td>'+pct(totDone,totScope)+'%</td><td>—</td></tr>'+
     '</tbody></table></div>';
+
+  // Índice de retorno — visão resumida comparando as 3 squads (detalhe completo na aba por squad)
+  const retRows=SQUADS.map(sq=>{
+    const r=(DATA[sq.code]||{}).ret; if(!r) return '';
+    const c=r.cur||{irq:null,irc:null,baseQA:0,baseCR:0,rejQA:0,rejCode:0};
+    return '<tr><td><strong>'+sq.name+'</strong> <span class="pill gray">'+sq.code+'</span></td>'+
+      '<td>'+retPill(c.irq)+'<br><small style="color:var(--text-secondary)">'+c.rejQA+' ÷ '+c.baseQA+' testados</small></td>'+
+      '<td>'+retPill(c.irc)+'<br><small style="color:var(--text-secondary)">'+c.rejCode+' ÷ '+c.baseCR+' em review</small></td>'+
+      '<td>'+retPill(r.all.irq)+'<br><small style="color:var(--text-secondary)">'+r.all.sprints+' sprints · '+r.all.rejQA+' ÷ '+r.all.baseQA+'</small></td>'+
+      '<td>'+retPill(r.all.irc)+'<br><small style="color:var(--text-secondary)">'+r.all.rejCode+' ÷ '+r.all.baseCR+'</small></td>'+
+      '<td><strong>QA '+retFactor(r.all.irq)+'</strong> · Dev '+retFactor(r.all.irc)+'</td></tr>';
+  }).join('');
+  html+='<div class="panel"><h2>🎯 Índice de retorno — retrabalho médio por card <span class="pill blue">0 é ótimo</span></h2>'+
+    '<p class="panel-sub">Quantas vezes, em média, um card <strong>volta</strong> antes de passar. <strong>Retorno QA</strong> = entradas em REJECTED BY QA / QA DENIED ÷ cards que chegaram ao QA · <strong>Retorno código</strong> = entradas em CODE REVIEW REJECTED ÷ cards que entraram em code review (changelog do Jira, inclui reincidências). Faixas: <strong style="color:var(--verde)">0 ótimo</strong> · ≤0,25 bom · ≤0,50 atenção · ≤1,00 ruim · &gt;1,00 crítico. O <strong>fator</strong> (1 + índice histórico) é o multiplicador sugerido para a pontuação prévia no refinamento.</p>'+
+    '<table><thead><tr><th>Squad</th><th>↩︎ Retorno QA (sprint atual)</th><th>↩︎ Retorno código (sprint atual)</th><th>Média histórica QA</th><th>Média histórica código</th><th>Fator de re-estimativa</th></tr></thead><tbody>'+retRows+'</tbody></table></div>';
 
   for(const sq of SQUADS){
     const d=DATA[sq.code], a=d.active;
@@ -726,7 +786,7 @@ function renderMap(){
   html+='</div>';
   // Desempenho por Dev/QA
   if(d.devs&&d.devs.length){
-    const totD={n:0,dn:0,sp:0,dsp:0,isp:0,tsp:0,noSP:0,histSP:0,histN:0,rejCode:0,rejQA:0};
+    const totD={n:0,dn:0,sp:0,dsp:0,isp:0,tsp:0,noSP:0,histSP:0,histN:0,rejCode:0,rejQA:0,baseQA:0,baseCR:0};
     const rejCell=(rc,rq)=>{
       const t=(rc||0)+(rq||0);
       if(!t) return '<td style="color:var(--text-disabled)">—</td>';
@@ -739,7 +799,10 @@ function renderMap(){
         '<td>'+v.n+'</td><td>'+v.dn+'</td><td>'+fmtSP(v.sp)+'</td><td style="color:var(--verde);font-weight:600">'+fmtSP(v.dsp)+'</td>'+
         '<td>'+fmtSP(v.isp)+'</td><td>'+fmtSP(v.tsp)+'</td><td>'+(v.noSP||'0')+'</td>'+
         '<td>'+(p!==null?'<span class="pill '+(p>=60?'green':(p>=35?'yellow':'red'))+'">'+p+'%</span>':'—')+'</td>'+
-        rejCell(v.rejCode,v.rejQA)+'</tr>';
+        rejCell(v.rejCode,v.rejQA)+
+        '<td title="'+(v.rejQA||0)+' retorno(s) de QA ÷ '+(v.baseQA||0)+' card(s) que chegaram ao QA">'+retPill(retIdx(v.rejQA||0,v.baseQA||0))+'</td>'+
+        '<td title="'+(v.rejCode||0)+' rejeição(ões) de código ÷ '+(v.baseCR||0)+' card(s) em code review">'+retPill(retIdx(v.rejCode||0,v.baseCR||0))+'</td>'+
+        '</tr>';
     }).join('');
     // Linha de QA da squad — campo "Story point QA" (customfield_10546) das issues da sprint
     const q=d.qa;
@@ -749,6 +812,8 @@ function renderMap(){
         '<td>'+q.n+'</td><td>'+q.dn+'</td><td>'+fmtSP(q.sp)+'</td><td style="color:var(--verde);font-weight:600">'+fmtSP(q.dsp)+'</td>'+
         '<td>'+fmtSP(q.isp)+'</td><td>'+fmtSP(q.tsp)+'</td><td>'+(q.noSP||'0')+'</td>'+
         '<td>'+(p!==null?'<span class="pill '+(p>=60?'green':(p>=35?'yellow':'red'))+'">'+p+'%</span>':'—')+'</td>'+
+        '<td style="color:var(--text-disabled)">—</td>'+
+        '<td title="Média da squad — retrabalho que o QA absorve">'+retPill((d.ret&&d.ret.cur)?d.ret.cur.irq:null)+' <small style="color:var(--text-disabled)">squad</small></td>'+
         '<td style="color:var(--text-disabled)">—</td></tr>';
     })():'';
     const closedCnt=list.filter(s=>s.state==='closed'&&!String(s.id).startsWith('bl-')).length;
@@ -765,14 +830,55 @@ function renderMap(){
       (reworkSmall.length?'<div class="rework-small">+ '+reworkSmall.length+' card(s) com 1 rejeição.</div>':'')+
       '</div>'
     ):'';
+    // ── Índice de retorno da squad (sprint atual) + histórico de todas as sprints ──
+    const R=d.ret||{cur:null,hist:[],all:{irq:null,irc:null}};
+    const rc=R.cur||{irq:null,irc:null,baseQA:0,baseCR:0,rejQA:0,rejCode:0};
+    const retTile=(title,v,rej,base,hint)=>{const b=retBand(v);
+      return '<div class="kpi-card" style="border-left:3px solid '+b.c+'">'+
+        '<div class="label">'+title+'</div>'+
+        '<div class="value" style="color:'+b.c+'">'+fmtIdx(v)+'</div>'+
+        '<div class="delta"><span class="pill" style="background:'+b.c+'26;color:'+b.c+'">'+b.l+'</span></div>'+
+        '<div class="delta">'+rej+' '+(rej===1?'retorno':'retornos')+' ÷ '+base+' card'+(base===1?'':'s')+' '+hint+'</div>'+
+        '<div class="sbar" style="margin-top:8px"><div style="background:var(--verde);width:16.6%"></div><div style="background:var(--amarelo);width:16.7%"></div><div style="background:var(--laranja);width:33.4%"></div><div style="background:#E8557B;width:33.3%"></div></div>'+
+        '<div style="position:relative;height:12px;font-size:9px"><span style="position:absolute;left:'+Math.min(100,Math.max(0,(v||0)/1.5*100))+'%;transform:translateX(-50%);font-weight:800;color:'+b.c+'">▲</span></div>'+
+      '</div>';};
+    const maxIrq=Math.max(0.01,...R.hist.map(h=>h.irq||0));
+    const sparks=R.hist.map(h=>{const b=retBand(h.irq);
+      return '<div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:4px">'+
+        '<div style="width:100%;height:'+Math.max(3,(h.irq||0)/maxIrq*54)+'px;background:'+b.c+';border-radius:3px 3px 0 0" title="'+esc(h.name)+' — retorno QA '+fmtIdx(h.irq)+' ('+h.rejQA+' ÷ '+h.baseQA+')"></div>'+
+        '<div style="font-size:9px;color:var(--text-secondary);text-align:center;line-height:1.25">'+esc(h.name.replace(/^Sprint\s+/,'S'))+(h.state==='active'?' ⬅️':'')+'<br><strong style="color:'+b.c+'">'+fmtIdx(h.irq)+'</strong></div></div>';}).join('');
+    html+='<div class="panel"><h2>🎯 Índice de retorno — retrabalho médio por card <span class="pill blue">'+esc(sprintLabel(a))+'</span></h2>'+
+      '<p class="panel-sub">Quantas vezes, em média, um card volta antes de passar — <strong>0 é ótimo</strong>. Base = cards que efetivamente chegaram ao estágio (changelog do Jira). Alimenta a re-estimativa: <strong>estimativa ajustada = estimativa prévia × (1 + índice)</strong>.</p>'+
+      '<div class="kpi-grid">'+
+        retTile('↩︎ Retorno QA (IRQ)',rc.irq,rc.rejQA,rc.baseQA,'que chegaram ao QA')+
+        retTile('↩︎ Retorno de código (IRC)',rc.irc,rc.rejCode,rc.baseCR,'que entraram em code review')+
+        '<div class="kpi-card" style="border-left:3px solid var(--turquesa)">'+
+          '<div class="label">Fator de re-estimativa</div>'+
+          '<div class="value" style="font-size:22px">QA '+retFactor(rc.irq)+' <span style="color:var(--text-disabled);font-size:15px">/</span> Dev '+retFactor(rc.irc)+'</div>'+
+          '<div class="delta">Sprint atual. Histórico (todas as sprints): <strong>QA '+retFactor(R.all.irq)+' · Dev '+retFactor(R.all.irc)+'</strong></div>'+
+          (rc.irq!=null?'<div class="delta">Ex.: 3 SP de QA → <strong style="color:var(--verde)">'+fmtIdx(3*(1+rc.irq))+' SP</strong> reais.</div>':'')+
+        '</div>'+
+      '</div>'+
+      '<h4 style="margin:6px 0 8px;font-size:13px">📈 Evolução e média histórica — todas as sprints da squad</h4>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start">'+
+        '<div class="kpi-grid" style="margin:0">'+
+          '<div class="kpi-card"><div class="label">Retorno QA — média geral</div><div class="value" style="color:'+retBand(R.all.irq).c+'">'+fmtIdx(R.all.irq)+'</div><div class="delta">'+R.all.rejQA+' retornos ÷ '+R.all.baseQA+' cards testados · '+R.all.sprints+' sprints</div></div>'+
+          '<div class="kpi-card"><div class="label">Retorno código — média geral</div><div class="value" style="color:'+retBand(R.all.irc).c+'">'+fmtIdx(R.all.irc)+'</div><div class="delta">'+R.all.rejCode+' rejeições ÷ '+R.all.baseCR+' cards em review</div></div>'+
+        '</div>'+
+        '<div class="kpi-card" style="margin:0"><div class="label">Retorno de QA por sprint</div><div style="display:flex;align-items:flex-end;gap:6px;height:82px;margin-top:8px">'+(sparks||'<span style="color:var(--text-disabled);font-size:11px">sem histórico</span>')+'</div></div>'+
+      '</div>'+
+      '<p style="font-size:11px;color:var(--text-disabled);margin:10px 0 0">Média geral = ponderada por card (todos os cards de todas as sprints da squad), não média de médias — não distorce sprints pequenas.</p>'+
+      '</div>';
     html+=reworkHtml;
     html+='<div class="panel"><h2>👤 Desempenho por Dev/QA — '+esc(sprintLabel(a))+'</h2>'+
       '<p class="panel-sub"><strong>DEV</strong> = SP das <strong>subtarefas</strong> (é onde o trabalho de desenvolvimento está alocado — cada subtarefa com seu próprio responsável e status; a soma das subtarefas = a porção dev da história). Histórias <strong>sem subtarefa</strong> usam a porção dev do próprio card (<em>Story Points total − Story point QA</em>). Subtarefas canceladas são excluídas. A linha <strong>🧪 QA</strong> usa o campo <strong>Story point QA</strong> das histórias/tarefas/bugs (atribuído ao QA quando a issue entra nos status de QA; entregue só em DONE). <strong>Mesma regra de busca e exibição nas 3 squads.</strong></p>'+
-      '<table><thead><tr><th>Dev / QA</th><th>Itens atrib.</th><th>Itens concl.</th><th>SP atribuídos</th><th>SP entregues</th><th>SP em andamento</th><th>SP não iniciados</th><th>Sem SP</th><th>% SP entregue</th><th>Rejeições</th></tr></thead><tbody>'+rowsD+
+      '<table><thead><tr><th>Dev / QA</th><th>Itens atrib.</th><th>Itens concl.</th><th>SP atribuídos</th><th>SP entregues</th><th>SP em andamento</th><th>SP não iniciados</th><th>Sem SP</th><th>% SP entregue</th><th>Rejeições</th><th>↩︎ Ret. QA</th><th>↩︎ Ret. código</th></tr></thead><tbody>'+rowsD+
       '<tr class="total-row"><td>TOTAL devs (subtarefas)</td><td>'+totD.n+'</td><td>'+totD.dn+'</td><td>'+fmtSP(totD.sp)+'</td><td>'+fmtSP(totD.dsp)+'</td><td>'+fmtSP(totD.isp)+'</td><td>'+fmtSP(totD.tsp)+'</td><td>'+totD.noSP+'</td>'+
-      '<td>'+(totD.sp>0?pct(totD.dsp,totD.sp)+'%':'—')+'</td>'+rejCell(totD.rejCode,totD.rejQA)+'</tr>'+
+      '<td>'+(totD.sp>0?pct(totD.dsp,totD.sp)+'%':'—')+'</td>'+rejCell(totD.rejCode,totD.rejQA)+
+      '<td>'+retPill((d.ret&&d.ret.cur)?d.ret.cur.irq:null)+'</td><td>'+retPill((d.ret&&d.ret.cur)?d.ret.cur.irc:null)+'</td></tr>'+
       qaRowHtml+
       '</tbody></table>'+
+      '<p style="font-size:11px;color:var(--text-disabled);margin:8px 0 0"><strong>↩︎ Ret. QA / Ret. código</strong> = retornos ÷ cards da pessoa que chegaram a cada estágio (0 é ótimo). Na linha 🧪 QA aparece a média da squad — o retrabalho que o QA absorve.</p>'+
       (qaRowHtml?'<p style="font-size:11px;color:var(--text-disabled);margin:8px 0 0">🧪 QA é linha complementar (não soma no TOTAL devs). <strong>DEV</strong> = pontos alocados nas <strong>subtarefas</strong> (trabalho de desenvolvimento); <strong>QA</strong> = <strong>Story point QA</strong> das histórias, contabilizado quando a issue entra no fluxo de QA. São partes do mesmo Story Points (total = DEV + QA), medidas na granularidade real de cada uma — por isso podem não fechar exatamente com o escopo do card (subtarefas têm estimativa própria e o QA só entra ao chegar no fluxo de QA).</p>':'')+
       '</div>';
     // Matriz Dev/QA × Sprint: entregas (e alocação) por sprint + média final

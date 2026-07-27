@@ -21,6 +21,10 @@ const FIELDS = ['status','customfield_10028','customfield_10546','customfield_10
 // Nomes reais confirmados no Jira (changelog de OE-140): "CODE REVIEW REJECTED" e "REJECTED BY QA".
 const REJECT_CODE_RE = /CODE\s*REVIEW\s*REJECTED/i;
 const REJECT_QA_RE = /REJECTED\s*BY\s*QA|QA\s*DENIED/i;
+// Estágios (BASE dos índices de retorno): a issue CHEGOU ao QA / ao code review pelo menos uma vez.
+// O denominador do índice é "cards que passaram pelo estágio", não o escopo inteiro da sprint.
+const QA_STAGE_RE = /(PENDING\s*QA|ON\s*GOING\s*QA|ON\s*TESTING|APPROVED\s*BY\s*QA|QA\s*VERIFIED|REJECTED\s*BY\s*QA|QA\s*DENIED)/i;
+const CR_STAGE_RE = /(CODE\s*REVIEW|PR\s*REVIEW|PULL\s*REQUEST)/i;
 // NENHUMA squad inclui subtarefas: com a migração dos pontos para o campo Story Points (DEV + QA)
 // nos cards principais, incluir subtasks na AE duplicava pontos (badge AE Sprint 5 = 80 SP; com
 // subtasks o hub inflava para 142,5).
@@ -139,14 +143,23 @@ async function fetchSubtasksByParent(project, parentKeys) {
 function countRejections(issue) {
   const histories = issue.changelog?.histories || [];
   let rejCode = 0, rejQA = 0, lastAt = null, lastWhat = null;
+  // touchQA / touchCR: a issue entrou pelo menos uma vez no estágio (base do índice de retorno).
+  let touchQA = false, touchCR = false;
   for (const h of histories) {
     for (const it of (h.items || [])) {
       if (it.field !== 'status') continue;
-      if (REJECT_CODE_RE.test(it.toString || '')) { rejCode++; lastAt = h.created; lastWhat = 'CODE REVIEW REJECTED'; }
-      else if (REJECT_QA_RE.test(it.toString || '')) { rejQA++; lastAt = h.created; lastWhat = 'REJECTED BY QA'; }
+      const to = it.toString || '';
+      if (QA_STAGE_RE.test(to)) touchQA = true;
+      if (CR_STAGE_RE.test(to)) touchCR = true;
+      if (REJECT_CODE_RE.test(to)) { rejCode++; lastAt = h.created; lastWhat = 'CODE REVIEW REJECTED'; }
+      else if (REJECT_QA_RE.test(to)) { rejQA++; lastAt = h.created; lastWhat = 'REJECTED BY QA'; }
     }
   }
-  return { rejCode, rejQA, lastRejAt: lastAt, lastRejWhat: lastWhat };
+  // Fallbacks: status atual já no estágio (issue criada direto nele) ou rejeição registrada.
+  const cur = issue.fields?.status?.name || '';
+  if (QA_STAGE_RE.test(cur) || rejQA > 0) touchQA = true;
+  if (CR_STAGE_RE.test(cur) || rejCode > 0) touchCR = true;
+  return { rejCode, rejQA, touchQA, touchCR, lastRejAt: lastAt, lastRejWhat: lastWhat };
 }
 
 // Mantém exatamente os caminhos de campo que o front-end (processSquad) usa
@@ -169,6 +182,8 @@ function slim(issue) {
     },
     rejCode: rej.rejCode,
     rejQA: rej.rejQA,
+    touchQA: rej.touchQA,
+    touchCR: rej.touchCR,
     lastRejAt: rej.lastRejAt,
     lastRejWhat: rej.lastRejWhat,
   };
