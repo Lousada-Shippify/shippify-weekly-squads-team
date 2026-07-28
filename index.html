@@ -38,6 +38,13 @@
   tbody tr:nth-child(odd) td{background:rgba(255,255,255,.015)}
   tr.total-row td{font-weight:700;background:var(--bg-card)!important}
   tr.qa-row td{background:rgba(170,30,193,.08)!important;border-top:1px solid rgba(170,30,193,.35)}
+  /* Desempenho por Dev/QA: colunas de métrica com largura IGUAL entre si (pedido em 28/07/2026).
+     table-layout:fixed distribui o espaço pelas larguras declaradas: nome fica maior (texto) e as
+     10 colunas numéricas dividem o resto em partes iguais, sem coluna larga/estreita aleatória. */
+  table.devqa{table-layout:fixed}
+  table.devqa th,table.devqa td{width:8%;text-align:center;padding:10px 8px;vertical-align:middle;overflow-wrap:break-word}
+  table.devqa th:first-child,table.devqa td.col-name{width:20%;text-align:left}
+  table.devqa td.col-name{white-space:normal}
   .pill{display:inline-block;padding:3px 10px;border-radius:4px;font-family:Geologica,sans-serif;font-size:11px;font-weight:600;letter-spacing:.03em;white-space:nowrap}
   .pill.green{background:rgba(78,203,113,.18);color:var(--verde)}
   .pill.yellow{background:rgba(193,157,30,.18);color:var(--amarelo)}
@@ -150,10 +157,11 @@ const LIVE_ENDPOINT = 'https://weekly-hub-proxy.vitor-lousada-t.workers.dev';
 //   em andamento (QA) = ON TESTING (ON GOING QA) · QA VERIFIED (APPROVED BY QA) · QA DENIED (REJECTED BY QA)
 //   entregue (QA)     = só DONE
 // Issues ainda em dev (backlog, Sendo feito, CODE REVIEW…) NÃO contam como atribuídas ao QA.
+// Sem e-mail exposto na UI — só o nome da pessoa de QA (pedido em 28/07/2026).
 const QA_OWNER = {
-  AE:'Sairys — QA (sairys@shippify.co)',
-  EE:'Mikael Ferreira — QA (mikael.ferreira.t@shippify.co)',
-  OE:'Nathaly Brasiliano — QA (nathaly.brasiliano.t@shippify.co)',
+  AE:'Sairys — QA',
+  EE:'Mikael Ferreira — QA',
+  OE:'Nathaly Brasiliano — QA',
 };
 const QA_PROG_RE = /(ON\s*GOING\s*QA|ON\s*TESTING|APPROVED\s*BY\s*QA|QA\s*VERIFIED|REJECTED\s*BY\s*QA|QA\s*DENIED)/i;
 const QA_WAIT_RE = /PENDING\s*QA/i;
@@ -181,9 +189,10 @@ const SQUADS = [
   // NENHUMA squad inclui subtarefas: com a migração dos pontos para o campo Story Points
   // (DEV + QA) nos cards principais, incluir subtasks na AE duplicava pontos.
   // Validado em 17/07/2026 contra o badge do backlog AE Sprint 5: 35 + 5,5 + 39,5 = 80 SP.
+  // Ordem das abas em 🔎 Detalhamento por Squad: AE · EE · OE (pedido em 28/07/2026).
   {code:'AE', name:'Apps Experience',      project:'AE', board:479},
-  {code:'OE', name:'Operation Experience', project:'OE', board:474},
   {code:'EE', name:'Ecosystem Experience', project:'EE', board:475},
+  {code:'OE', name:'Operation Experience', project:'OE', board:474},
 ];
 // BASELINES OFICIAIS de sprints FECHADAS — badges do Jira lidos na época (reports validados:
 // anexo OE + Sprint Plans 5570562 e 22708225). Sprints fechadas não mudam mais; os campos atuais
@@ -233,6 +242,23 @@ let charts = [];
 
 const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const fmtSP = n => (Math.round(n*100)/100).toString();
+// Nome curto para a coluna Dev/QA: só primeiro + último nome (pedido em 28/07/2026).
+// Ignora partículas (da, de, dos…) e, quando o último token é sufixo de família (Junior, Filho,
+// Neto…), usa o sobrenome que vem antes dele — ex.: "Robson Dias Santana Junior" → "Robson Santana",
+// "Pedro Henrique Menezes Mariano da Silva" → "Pedro Silva". Mantém rótulos como "— QA" intactos.
+const SUFFIX_RE = /^(j[uú]nior|jr\.?|filho|neto|sobrinho|segundo|terceiro|ii|iii)$/i;
+const PARTICLE_RE = /^(da|das|de|do|dos|e|del|la|van|von)$/i;
+function shortName(full){
+  const s=String(full??'').trim();
+  if(!s || s==='Sem responsável') return s;
+  const tail=s.match(/\s+—\s+.*$/);                 // preserva sufixo de rótulo (ex.: " — QA")
+  const base=tail?s.slice(0,tail.index):s;
+  const parts=base.split(/\s+/).filter(p=>p&&!PARTICLE_RE.test(p));
+  if(parts.length<2) return s;
+  let last=parts[parts.length-1];
+  if(SUFFIX_RE.test(last)&&parts.length>=3) last=parts[parts.length-2];
+  return parts[0]+' '+last+(tail?tail[0]:'');
+}
 const pct = (a,b) => b>0 ? Math.round(a/b*100) : 0;
 const ddmm = d => String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0');
 const ddmmyyyy = d => ddmm(d)+'/'+d.getFullYear();
@@ -697,7 +723,8 @@ function renderPlan(){
 function kpi(l,v,d){return '<div class="kpi-card"><div class="label">'+l+'</div><div class="value">'+v+'</div><div class="delta">'+(d||'')+'</div></div>';}
 
 /* ---------- VIEW 2: Mapa Comparativo ---------- */
-let curSquad = localStorage.getItem('wh_squad')||'OE';
+// Abre na primeira aba da nova ordem (AE · EE · OE) quando não há escolha salva no navegador.
+let curSquad = localStorage.getItem('wh_squad')||SQUADS[0].code;
 function renderMapTabs(){
   const t=document.getElementById('squadTabs');
   t.innerHTML=SQUADS.map(s=>'<button data-sq="'+s.code+'" class="'+(s.code===curSquad?'active':'')+'">'+s.code+' · '+s.name+'</button>').join('');
@@ -792,19 +819,13 @@ function renderMap(){
   // Desempenho por Dev/QA
   if(d.devs&&d.devs.length){
     const totD={n:0,dn:0,sp:0,dsp:0,isp:0,tsp:0,noSP:0,histSP:0,histN:0,rejCode:0,rejQA:0,baseQA:0,baseCR:0};
-    const rejCell=(rc,rq)=>{
-      const t=(rc||0)+(rq||0);
-      if(!t) return '<td style="color:var(--text-disabled)">—</td>';
-      return '<td><span class="pill '+(t>=3?'red':(t>=2?'yellow':'blue'))+'">'+t+' ('+(rc||0)+'C/'+(rq||0)+'QA)</span></td>';
-    };
     const rowsD=d.devs.map(v=>{
       Object.keys(totD).forEach(k=>totD[k]+=v[k]||0);
       const p=v.sp>0?pct(v.dsp,v.sp):null;
-      return '<tr><td'+(v.name==='Sem responsável'?' style="color:var(--text-disabled);font-style:italic"':' style="font-weight:600"')+'>'+esc(v.name)+'</td>'+
+      return '<tr><td class="col-name" title="'+esc(v.name)+'"'+(v.name==='Sem responsável'?' style="color:var(--text-disabled);font-style:italic"':' style="font-weight:600"')+'>'+esc(shortName(v.name))+'</td>'+
         '<td>'+v.n+'</td><td>'+v.dn+'</td><td>'+fmtSP(v.sp)+'</td><td style="color:var(--verde);font-weight:600">'+fmtSP(v.dsp)+'</td>'+
         '<td>'+fmtSP(v.isp)+'</td><td>'+fmtSP(v.tsp)+'</td><td>'+(v.noSP||'0')+'</td>'+
         '<td>'+(p!==null?'<span class="pill '+(p>=60?'green':(p>=35?'yellow':'red'))+'">'+p+'%</span>':'—')+'</td>'+
-        rejCell(v.rejCode,v.rejQA)+
         '<td title="'+(v.rejQA||0)+' retorno(s) de QA ÷ '+(v.baseQA||0)+' card(s) que chegaram ao QA">'+retPill(retIdx(v.rejQA||0,v.baseQA||0))+'</td>'+
         '<td title="'+(v.rejCode||0)+' rejeição(ões) de código ÷ '+(v.baseCR||0)+' card(s) em code review">'+retPill(retIdx(v.rejCode||0,v.baseCR||0))+'</td>'+
         '</tr>';
@@ -813,11 +834,10 @@ function renderMap(){
     const q=d.qa;
     const qaRowHtml=(q&&(q.n>0||q.histN>0||q.noSP>0))?(()=>{
       const p=q.sp>0?pct(q.dsp,q.sp):null;
-      return '<tr class="qa-row"><td style="font-weight:600">🧪 '+esc(q.name)+' <span class="pill purple">Story point QA</span></td>'+
+      return '<tr class="qa-row"><td class="col-name" style="font-weight:600">🧪 '+esc(shortName(q.name))+' <span class="pill purple">Story point QA</span></td>'+
         '<td>'+q.n+'</td><td>'+q.dn+'</td><td>'+fmtSP(q.sp)+'</td><td style="color:var(--verde);font-weight:600">'+fmtSP(q.dsp)+'</td>'+
         '<td>'+fmtSP(q.isp)+'</td><td>'+fmtSP(q.tsp)+'</td><td>'+(q.noSP||'0')+'</td>'+
         '<td>'+(p!==null?'<span class="pill '+(p>=60?'green':(p>=35?'yellow':'red'))+'">'+p+'%</span>':'—')+'</td>'+
-        '<td style="color:var(--text-disabled)">—</td>'+
         '<td title="Média da squad — retrabalho que o QA absorve">'+retPill((d.ret&&d.ret.cur)?d.ret.cur.irq:null)+' <small style="color:var(--text-disabled)">squad</small></td>'+
         '<td style="color:var(--text-disabled)">—</td></tr>';
     })():'';
@@ -903,9 +923,9 @@ function renderMap(){
     html+=reworkHtml;
     html+='<div class="panel"><h2>👤 Desempenho por Dev/QA — '+esc(sprintLabel(a))+'</h2>'+
       '<p class="panel-sub"><strong>DEV</strong> = SP das <strong>subtarefas</strong> (é onde o trabalho de desenvolvimento está alocado — cada subtarefa com seu próprio responsável e status; a soma das subtarefas = a porção dev da história). Histórias <strong>sem subtarefa</strong> usam a porção dev do próprio card (<em>Story Points total − Story point QA</em>). Subtarefas canceladas são excluídas. A linha <strong>🧪 QA</strong> usa o campo <strong>Story point QA</strong> das histórias/tarefas/bugs (atribuído ao QA quando a issue entra nos status de QA; entregue só em DONE). <strong>Mesma regra de busca e exibição nas 3 squads.</strong></p>'+
-      '<table><thead><tr><th>Dev / QA</th><th>Itens atrib.</th><th>Itens concl.</th><th>SP atribuídos</th><th>SP entregues</th><th>SP em andamento</th><th>SP não iniciados</th><th>Sem SP</th><th>% SP entregue</th><th>Rejeições</th><th>↩︎ Ret. QA</th><th>↩︎ Ret. código</th></tr></thead><tbody>'+rowsD+
-      '<tr class="total-row"><td>TOTAL devs (subtarefas)</td><td>'+totD.n+'</td><td>'+totD.dn+'</td><td>'+fmtSP(totD.sp)+'</td><td>'+fmtSP(totD.dsp)+'</td><td>'+fmtSP(totD.isp)+'</td><td>'+fmtSP(totD.tsp)+'</td><td>'+totD.noSP+'</td>'+
-      '<td>'+(totD.sp>0?pct(totD.dsp,totD.sp)+'%':'—')+'</td>'+rejCell(totD.rejCode,totD.rejQA)+
+      '<table class="devqa"><thead><tr><th>Dev / QA</th><th>Itens atrib.</th><th>Itens concl.</th><th>SP atribuídos</th><th>SP entregues</th><th>SP em andamento</th><th>SP não iniciados</th><th>Sem SP</th><th>% SP entregue</th><th>↩︎ Ret. QA</th><th>↩︎ Ret. código</th></tr></thead><tbody>'+rowsD+
+      '<tr class="total-row"><td class="col-name">TOTAL devs (subtarefas)</td><td>'+totD.n+'</td><td>'+totD.dn+'</td><td>'+fmtSP(totD.sp)+'</td><td>'+fmtSP(totD.dsp)+'</td><td>'+fmtSP(totD.isp)+'</td><td>'+fmtSP(totD.tsp)+'</td><td>'+totD.noSP+'</td>'+
+      '<td>'+(totD.sp>0?pct(totD.dsp,totD.sp)+'%':'—')+'</td>'+
       '<td>'+retPill((d.ret&&d.ret.cur)?d.ret.cur.irq:null)+'</td><td>'+retPill((d.ret&&d.ret.cur)?d.ret.cur.irc:null)+'</td></tr>'+
       qaRowHtml+
       '</tbody></table>'+
