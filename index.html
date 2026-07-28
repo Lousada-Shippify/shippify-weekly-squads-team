@@ -953,7 +953,7 @@ function renderMap(){
       (()=>{const bl=list.filter(s=>String(s.id).startsWith('bl-'));
         if(!bl.length) return '';
         return '<p style="font-size:11px;color:var(--text-disabled);margin:8px 0 0">'+
-          bl.map(s=>esc(sprintLabel(s))).join(', ')+' não aparece nesta matriz: essa sprint <strong>não existe no board '+sq.board+'</strong> (rodou no board compartilhado, antes da squad ter board próprio), então o Jira não permite atribuir as entregas por pessoa. '+
+          bl.map(s=>esc(sprintLabel(s))).join(', ')+' não aparece nesta matriz: essa sprint <strong>não existe no board '+((d.squad&&d.squad.board)||'da squad')+'</strong> (rodou no board compartilhado, antes da squad ter board próprio), então o Jira não permite atribuir as entregas por pessoa. '+
           'Dela só existe o <strong>baseline oficial da squad</strong> ('+bl.map(s=>esc(sprintLabel(s))+': '+fmtSP(s.delivered)+' SP entregues').join(' · ')+'), que aparece em Métricas-chave e na Velocity. '+
           'Reconstruir por dev com os campos de hoje daria números inflados (na AE, 126,5 SP contra os 44,5 SP oficiais), por isso não fazemos.</p>';})()+
       '</div>';
