@@ -266,11 +266,11 @@ export default {
         const board = BOARD_BY_PROJECT[p];
         const jql = `project = ${p} AND sprint is not EMPTY AND issuetype NOT IN subtaskIssueTypes()`;
         const issues = await searchAll(auth, jql);
-        // Histórias da sprint ATIVA (por board) — só delas buscamos subtarefas.
-        const activeKeys = issues
-          .filter(i => (i.fields?.customfield_10020 || []).some(s => s.state === 'active' && s.boardId === board))
-          .map(i => i.key);
-        const subByParent = activeKeys.length ? await fetchSubtasksByParent(auth, p, activeKeys) : {};
+        // Subtarefas de TODAS as histórias com sprint (não só da ativa): a matriz Dev × Sprint mede
+        // alocado/entregue por sprint com a mesma regra DEV = subtarefas, inclusive no histórico
+        // (03/08/2026). Custo baixo — lotes de 100 chaves por request.
+        const allKeys = issues.map(i => i.key);
+        const subByParent = allKeys.length ? await fetchSubtasksByParent(auth, p, allKeys) : {};
         const bulk = await fetchChangelogs(auth, issues.map(i => i.id).filter(Boolean));
         squads[p] = issues.map(i => { const o = slim(i, bulk); o.subs = subByParent[i.key] || []; return o; });
         sprintReport[p] = await getSprintReport(auth, board);

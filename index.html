@@ -439,21 +439,44 @@ function processSquad(sq, nodes, report){
     if(r.cancelled) continue;
     const nm=r.assignee||'Sem responsável';
     const d=devMap[nm]=devMap[nm]||{name:nm,n:0,dn:0,sp:0,dsp:0,isp:0,tsp:0,noSP:0,histSP:0,histN:0,part:new Set(),by:{},rejCode:0,rejQA:0,baseQA:0,baseCR:0};
-    for(const sid of r.ids){
-      if(closedIds.has(sid)) d.part.add(sid);
-      const bs=d.by[sid]=d.by[sid]||{aSP:0,aN:0,dSP:0,dN:0};
-      bs.aSP+=r.sp; bs.aN++;
-    }
-    if(r.cat==='done'&&r.delivSprintId!=null){
-      const bs=d.by[r.delivSprintId]=d.by[r.delivSprintId]||{aSP:0,aN:0,dSP:0,dN:0};
-      bs.dSP+=r.sp; bs.dN++;
-    }
-    if(r.cat==='done'&&r.delivClosed){ d.histSP+=r.sp; d.histN++; }
     // Rejeições ficam no nível da história (changelog do pai) → creditadas ao assignee do pai.
     if(active&&r.ids.includes(active.id)){
       d.rejCode+=r.rejCode||0; d.rejQA+=r.rejQA||0;
       if(r.touchQA) d.baseQA++;                 // base do índice de retorno de QA da pessoa
       if(r.touchCR) d.baseCR++;                 // base do índice de retorno de código da pessoa
+    }
+  }
+  // Matriz Dev × Sprint (alocado/entregue por sprint) e média final usam a MESMA regra da tabela
+  // Desempenho por Dev/QA: DEV = SUBTAREFAS (cada uma com seu responsável e SP), e histórias sem
+  // subtarefa usam a porção dev do card (total − Story point QA). Antes esta matriz somava o Story
+  // Points TOTAL (dev+QA) no responsável do pai, o que divergia da outra tabela (ex.: EE Sprint 6,
+  // José 37 SP na matriz × 26 SP no Dev/QA) e inflava a média final. Corrigido em 03/08/2026.
+  const mkDev0=nm=>devMap[nm]=devMap[nm]||{name:nm,n:0,dn:0,sp:0,dsp:0,isp:0,tsp:0,noSP:0,histSP:0,histN:0,part:new Set(),by:{},rejCode:0,rejQA:0,baseQA:0,baseCR:0};
+  const liveSubs=r=>(r.subs||[]).filter(s=>!(s.c==='done'&&/cancel|discard|descart/i.test(s.s||'')));
+  for(const r of recs){
+    if(r.cancelled) continue;
+    const subs=liveSubs(r);
+    // unidades de trabalho da história: subtarefas (dev) ou, sem elas, a porção dev do próprio card
+    const units=subs.length
+      ? subs.map(s=>({who:s.assignee||r.assignee||'Sem responsável', sp:(typeof s.sp==='number'?s.sp:0), done:s.c==='done'}))
+      : [{who:r.assignee||'Sem responsável', sp:Math.max(0,(r.sp||0)-(r.spqa||0)), done:r.cat==='done'}];
+    for(const u of units){
+      const d=mkDev0(u.who);
+      for(const sid of r.ids){
+        if(closedIds.has(sid)) d.part.add(sid);
+        const bs=d.by[sid]=d.by[sid]||{aSP:0,aN:0,dSP:0,dN:0};
+        bs.aSP+=u.sp; bs.aN++;
+      }
+      if(u.done){
+        // entrega atribuída à sprint em que a história foi concluída; se ainda não fechou, à ativa
+        const target=(r.delivSprintId!=null)?r.delivSprintId
+          :((active&&r.ids.includes(active.id))?active.id:null);
+        if(target!=null){
+          const bs=d.by[target]=d.by[target]||{aSP:0,aN:0,dSP:0,dN:0};
+          bs.dSP+=u.sp; bs.dN++;
+        }
+        if(r.delivClosed){ d.histSP+=u.sp; d.histN++; }
+      }
     }
   }
   // Colunas da SPRINT ATUAL por dev = SUBTAREFAS (é nelas que o trabalho de dev acontece; a soma das
