@@ -33,10 +33,11 @@ const QA_STAGE_RE = /(PENDING\s*QA|ON\s*GOING\s*QA|ON\s*TESTING|APPROVED\s*BY\s*
 const CR_STAGE_RE = /(CODE\s*REVIEW|PR\s*REVIEW|PULL\s*REQUEST)/i;
 // Nenhuma squad pontua subtarefas — os pontos já vêm somados (DEV+QA) no campo Story Points
 // das histórias/tarefas/bugs. Regra igual para AE, OE e EE (confirmado com o time em 20/07/2026).
-const PROJECTS = ['AE', 'OE', 'EE'];
+// INF (Infrastructure, board 476) entrou em 28/07/2026 — mesmas métricas das outras squads.
+const PROJECTS = ['AE', 'OE', 'EE', 'INF'];
 // Board de cada squad — necessário para puxar o relatório oficial de sprint do Jira (fonte da
 // verdade para Scope/Completed/Remaining SP e % de progresso, pedido em 20/07/2026).
-const BOARD_BY_PROJECT = { AE: 479, OE: 474, EE: 475 };
+const BOARD_BY_PROJECT = { AE: 479, OE: 474, EE: 475, INF: 476 };
 
 function corsHeaders(origin) {
   return {

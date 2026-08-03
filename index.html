@@ -26,6 +26,16 @@
   .view-tabs{display:flex;gap:4px;background:var(--bg-surface);border:1px solid var(--border);padding:4px;border-radius:10px;width:fit-content;margin-bottom:18px}
   .view-tabs button{border:none;border-bottom:2px solid transparent;background:transparent;padding:9px 18px;border-radius:8px;font-family:Geologica,sans-serif;font-size:13.5px;font-weight:600;cursor:pointer;color:var(--text-secondary);transition:all .15s}
   .view-tabs button.active{background:var(--bg-card);color:var(--text-primary);border-bottom-color:var(--verde)}
+  /* Header fixo da página única (28/07/2026): título + botões de squad sempre visíveis */
+  .sticky-top{position:sticky;top:0;z-index:50;background:var(--bg-page);padding-top:6px;
+    box-shadow:0 6px 18px -8px rgba(0,0,0,.9);border-bottom:1px solid var(--border);margin-bottom:18px}
+  .squad-nav{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:0 0 8px}
+  .squad-nav-top{font-family:Geologica,sans-serif;font-size:11.5px;font-weight:600;color:var(--text-disabled);text-decoration:none;white-space:nowrap}
+  .squad-nav-top:hover{color:var(--text-secondary)}
+  .squad-nav .squad-tabs{margin-bottom:0}
+  /* Seções por squad: âncora de scroll com respiro pro header fixo não cobrir o título */
+  .squad-section{scroll-margin-top:150px;padding-top:6px;margin-bottom:10px}
+  .squad-title{font-family:Geologica,sans-serif;font-size:19px;margin:26px 0 12px;padding-bottom:8px;border-bottom:2px solid var(--border)}
   .squad-tabs{display:flex;gap:4px;background:var(--bg-surface);border:1px solid var(--border);padding:4px;border-radius:10px;width:fit-content;margin-bottom:16px}
   .squad-tabs button{border:none;background:transparent;padding:7px 14px;border-radius:8px;font-family:Geologica,sans-serif;font-size:13px;font-weight:600;cursor:pointer;color:var(--text-secondary)}
   .squad-tabs button.active{background:var(--bg-card);color:var(--text-primary);box-shadow:inset 0 -2px 0 var(--turquesa)}
@@ -109,30 +119,28 @@
 </head>
 <body>
 <div class="wrap">
-  <header class="top">
-    <div>
-      <h1>Weekly Product — Engineering Squads</h1>
-      <p class="subtitle" id="subtitle">Carregando dados do Jira…</p>
-    </div>
-    <div class="cta">
-      <button class="btn-refresh" id="btnRefresh" disabled title="Consulta o Jira agora mesmo (tempo real via proxy) — sem exigir login de quem acessa">🔄 Atualizar dados</button>
-      <div class="cta-status" id="ctaStatus">Carregando…</div>
-    </div>
-  </header>
-
-  <div class="view-tabs" id="viewTabs">
-    <button data-view="plan" class="active">📋 Sprint Plan (Weekly)</button>
-    <button data-view="map">🔎 Detalhamento por Squad</button>
+  <!-- Header FIXO: título, status, atualizar e os botões de squad que rolam até a seção -->
+  <div class="sticky-top">
+    <header class="top">
+      <div>
+        <h1>Weekly Product — Engineering Squads</h1>
+        <p class="subtitle" id="subtitle">Carregando dados do Jira…</p>
+      </div>
+      <div class="cta">
+        <button class="btn-refresh" id="btnRefresh" disabled title="Consulta o Jira agora mesmo (tempo real via proxy) — sem exigir login de quem acessa">🔄 Atualizar dados</button>
+        <div class="cta-status" id="ctaStatus">Carregando…</div>
+      </div>
+    </header>
+    <nav class="squad-nav">
+      <a class="squad-nav-top" href="#resumo-overview" title="Voltar aos resumos do topo">▲ Resumos</a>
+      <div class="squad-tabs" id="squadNav"></div>
+    </nav>
   </div>
 
   <div id="errBox" class="err hidden"></div>
   <div id="loading" class="loading"><div class="spinner"></div><span id="loadingMsg">Carregando data.json…</span></div>
 
-  <div id="viewPlan" class="hidden"></div>
-  <div id="viewMap" class="hidden">
-    <div class="squad-tabs" id="squadTabs"></div>
-    <div id="mapContent"></div>
-  </div>
+  <div id="app"></div>
 
   <div class="footer" id="footer"></div>
 </div>
@@ -162,6 +170,7 @@ const QA_OWNER = {
   AE:'Sairys — QA',
   EE:'Mikael Ferreira — QA',
   OE:'Nathaly Brasiliano — QA',
+  INF:'Luana Muller — QA',
 };
 const QA_PROG_RE = /(ON\s*GOING\s*QA|ON\s*TESTING|APPROVED\s*BY\s*QA|QA\s*VERIFIED|REJECTED\s*BY\s*QA|QA\s*DENIED)/i;
 const QA_WAIT_RE = /PENDING\s*QA/i;
@@ -184,15 +193,17 @@ const retFactor = v => (v===null||v===undefined||isNaN(v)) ? '—' : ('×'+(Math
 // Pessoas que NÃO são desenvolvedoras (PM, Design, etc.) — não entram nas linhas de DEV nem no
 // TOTAL devs, mesmo que apareçam como responsáveis de alguma subtarefa/história. Ex.: Gabriel
 // Goldner Silva (PM) e Rayanne Ferreira (Design) na AE. QA já é tratado à parte via QA_OWNER.
-const NON_DEV = ['Gabriel Goldner Silva', 'Rayanne Ferreira'];
+// INF (confirmado em 28/07/2026): Luana é QA (aparece na linha 🧪 QA) e Reginaldo Soares não é dev.
+const NON_DEV = ['Gabriel Goldner Silva', 'Rayanne Ferreira', 'Reginaldo Soares'];
 const SQUADS = [
   // NENHUMA squad inclui subtarefas: com a migração dos pontos para o campo Story Points
   // (DEV + QA) nos cards principais, incluir subtasks na AE duplicava pontos.
   // Validado em 17/07/2026 contra o badge do backlog AE Sprint 5: 35 + 5,5 + 39,5 = 80 SP.
-  // Ordem das abas em 🔎 Detalhamento por Squad: AE · EE · OE (pedido em 28/07/2026).
-  {code:'AE', name:'Apps Experience',      project:'AE', board:479},
-  {code:'EE', name:'Ecosystem Experience', project:'EE', board:475},
-  {code:'OE', name:'Operation Experience', project:'OE', board:474},
+  // Ordem dos botões de squad no header: AE · EE · INF · OE (pedido em 28/07/2026).
+  {code:'AE',  name:'Apps Experience',      project:'AE',  board:479},
+  {code:'EE',  name:'Ecosystem Experience', project:'EE',  board:475},
+  {code:'INF', name:'Infrastructure',       project:'INF', board:476},
+  {code:'OE',  name:'Operation Experience', project:'OE',  board:474},
 ];
 // BASELINES OFICIAIS de sprints FECHADAS — badges do Jira lidos na época (reports validados:
 // anexo OE + Sprint Plans 5570562 e 22708225). Sprints fechadas não mudam mais; os campos atuais
@@ -593,9 +604,8 @@ function boardUrl(sq){return 'https://shippify.atlassian.net/jira/software/c/pro
 function sprintLabel(s){return s? s.name.replace(/^EE\s+/,''):'—';}
 
 /* ---------- VIEW 1: Sprint Plan ---------- */
-function renderPlan(){
-  const el=document.getElementById('viewPlan');
-  charts.forEach(c=>c.destroy()); charts=[];
+// Resumos do topo da página única: Overview (todas as squads) + Índice de retorno comparativo.
+function summariesHtml(){
   const rows=[], today=new Date();
   let totScope=0, totDone=0;
   for(const sq of SQUADS){
@@ -608,9 +618,11 @@ function renderPlan(){
       '<td>'+statusPill(pct(a.doneSP,a.badgeScope),a.day)+'</td>'+
       '<td>'+statusPill(pct(a.doneN,a.todoN+a.inprogN+a.doneN),a.day)+'</td></tr>');
   }
+  // As squads podem estar em sprints diferentes (ex.: INF na Sprint 8 e as outras na 6), então o
+  // título do Overview não fixa mais um número de sprint — cada linha mostra a sua.
   const anyActive=SQUADS.map(s=>DATA[s.code].active).find(Boolean);
   const dayStr=anyActive?('Day '+anyActive.day+' of '+WORKDAYS):'';
-  let html='<div class="panel"><h2>Overview — '+esc(sprintLabel(anyActive))+' <span class="pill blue">'+dayStr+'</span></h2>'+
+  let html='<div class="panel" id="resumo-overview"><h2>Overview — sprint atual de cada squad <span class="pill blue">'+dayStr+'</span></h2>'+
     '<p class="panel-sub">SP = campo <strong>Story Points</strong> (customfield_10028), que <strong>já é a somatória dos pontos de DEV + QA</strong> da história/tarefa/bug, somado por status category do board, <strong>sem subtarefas</strong> (os pontos vivem nos cards principais — regra igual aos badges do backlog nas 3 squads) e <strong>excluindo issues canceladas</strong> (statuses CANCEL têm categoria “done” no Jira mas não são entrega). Duas métricas: <strong>% Done (SP)</strong> = Completed SP ÷ Scope SP · <strong>% Done (issues)</strong> = contagem de tickets.</p>'+
     '<table><thead><tr><th>Squad</th><th>Sprint Goal</th><th>Scope SP</th><th>Completed SP</th><th>Remaining SP</th><th>% Done (SP)</th><th>% Done (issues)</th></tr></thead><tbody>'+rows.join('')+
     '<tr class="total-row"><td>Total</td><td>—</td><td>'+fmtSP(totScope)+'</td><td>'+fmtSP(totDone)+'</td><td>'+fmtSP(totScope-totDone)+'</td><td>'+pct(totDone,totScope)+'%</td><td>—</td></tr>'+
@@ -630,13 +642,17 @@ function renderPlan(){
       '<td>'+retPill(r.all.irc)+'<br><small style="color:var(--text-secondary)">'+r.all.rejCode+' ÷ '+r.all.baseCR+'</small></td>'+
       '<td><strong>QA '+retFactor(r.all.irq)+'</strong> · Dev '+retFactor(r.all.irc)+'</td></tr>';
   }).join('');
-  html+='<div class="panel"><h2>🎯 Índice de retorno — retrabalho médio por card <span class="pill blue">0 é ótimo</span></h2>'+
+  html+='<div class="panel" id="resumo-retorno"><h2>🎯 Índice de retorno — retrabalho médio por card <span class="pill blue">0 é ótimo</span></h2>'+
     '<p class="panel-sub">Quantas vezes, em média, um card <strong>volta</strong> antes de passar. <strong>Retorno QA</strong> = entradas em REJECTED BY QA / QA DENIED ÷ cards que chegaram ao QA · <strong>Retorno código</strong> = entradas em CODE REVIEW REJECTED ÷ cards que entraram em code review (changelog do Jira, inclui reincidências). Faixas: <strong style="color:var(--verde)">0 ótimo</strong> · ≤0,25 bom · ≤0,50 atenção · ≤1,00 ruim · &gt;1,00 crítico. O <strong>fator</strong> (1 + índice histórico) é o multiplicador sugerido para a pontuação prévia no refinamento. <strong>“sem eventos”</strong> = a squad nunca registrou aquele status de rejeição no histórico: o índice não é 0 por qualidade, é falta de instrumentação no fluxo do board — verificar antes de comparar squads. <strong>Escopo:</strong> só cards dentro de sprint, sem subtarefas.</p>'+
     '<table><thead><tr><th>Squad</th><th>↩︎ Retorno QA (sprint atual)</th><th>↩︎ Retorno código (sprint atual)</th><th>Média histórica QA</th><th>Média histórica código</th><th>Fator de re-estimativa</th></tr></thead><tbody>'+retRows+'</tbody></table></div>';
+  return html;
+}
 
-  for(const sq of SQUADS){
+// Bloco de Sprint Plan de UMA squad (agreements, progresso, KPIs e burndown) — retorna HTML.
+function squadPlanHtml(sq){
+    let html='';
     const d=DATA[sq.code], a=d.active;
-    if(!a) continue;
+    if(!a) return '<div class="squad-block"><h3>'+sq.name+'</h3><p style="color:var(--text-secondary);margin:0">Sem sprint ativa no momento (virada de sprint) — inicie a próxima sprint no board para os dados aparecerem.</p></div>';
     const pSP=pct(a.doneSP,a.badgeScope), pIss=pct(a.doneN,a.todoN+a.inprogN+a.doneN);
     const idealRem=a.badgeScope*(1-a.day/WORKDAYS);
     const diff=a.remaining-idealRem;
@@ -694,8 +710,37 @@ function renderPlan(){
       '</div>'+
       '<div class="chart-holder"><canvas id="bd_'+sq.code+'"></canvas></div>'+
       '<p style="margin:10px 0 0"><a class="jira-link" href="'+boardUrl(sq)+'" target="_blank">↗ Open Sprint Insights in Jira ('+sq.code+') — Progresso + Burndown</a></p></div>';
+  return html;
+}
+// Burndown de uma squad (chamado depois do HTML entrar no DOM)
+function drawBurndown(sq){
+  const a=DATA[sq.code]&&DATA[sq.code].active; if(!a) return;
+  const labels=['Start']; const ideal=[a.badgeScope]; const actual=[a.badgeScope];
+  for(let i=1;i<=WORKDAYS;i++){labels.push('D'+i);ideal.push(Math.max(0,+(a.badgeScope*(1-i/WORKDAYS)).toFixed(1)));actual.push(i===a.day?a.remaining:null);}
+  const ctx=document.getElementById('bd_'+sq.code); if(!ctx) return;
+  charts.push(new Chart(ctx,{type:'line',data:{labels,datasets:[
+    {label:'Ideal (SP remaining)',data:ideal,borderColor:'#666666',borderDash:[5,4],pointRadius:0,tension:0},
+    {label:'Actual (SP remaining)',data:actual,borderColor:'#4ECB71',backgroundColor:'#4ECB71',pointRadius:5,spanGaps:true,tension:0}
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#AAAAAA',font:{size:11}}}},
+    scales:{x:{ticks:{color:'#666'},grid:{color:'rgba(255,255,255,.05)'}},y:{beginAtZero:true,ticks:{color:'#666'},grid:{color:'rgba(255,255,255,.05)'}}}}}));
+}
+
+/* ---------- PÁGINA ÚNICA (28/07/2026) ----------
+   Antes eram duas abas (Sprint Plan / Detalhamento por Squad) com uma squad por vez. Agora tudo
+   vive numa página só: resumos no topo (Overview + Índice de retorno) e, abaixo, uma seção completa
+   por squad (Sprint Plan + Detalhamento). Os botões do header fixo rolam até a seção da squad. */
+function renderAll(){
+  charts.forEach(c=>{try{c.destroy()}catch(e){}}); charts=[];
+  const el=document.getElementById('app');
+  let html=summariesHtml();
+  for(const sq of SQUADS){
+    html+='<section class="squad-section" id="sq-'+sq.code+'">'+
+      '<h2 class="squad-title"><span class="pill gray">'+sq.code+'</span> '+esc(sq.name)+'</h2>'+
+      squadPlanHtml(sq)+squadDetailHtml(sq.code)+
+    '</section>';
   }
   el.innerHTML=html;
+  // campos editáveis (Sprint Agreements) — mesmo comportamento de antes, salvos no navegador
   el.querySelectorAll('textarea[data-key]').forEach(t=>{
     const m=t.dataset.key.match(/^wh_agr_(\w+)_(.+)_(constraints|risks|validations)$/);
     let v=localStorage.getItem(t.dataset.key);
@@ -708,31 +753,39 @@ function renderPlan(){
     t.value=v||'';
     t.oninput=()=>localStorage.setItem(t.dataset.key,t.value);
   });
-  for(const sq of SQUADS){
-    const a=DATA[sq.code].active; if(!a) continue;
-    const labels=['Start']; const ideal=[a.badgeScope]; const actual=[a.badgeScope];
-    for(let i=1;i<=WORKDAYS;i++){labels.push('D'+i);ideal.push(Math.max(0,+(a.badgeScope*(1-i/WORKDAYS)).toFixed(1)));actual.push(i===a.day?a.remaining:null);}
-    const ctx=document.getElementById('bd_'+sq.code);
-    charts.push(new Chart(ctx,{type:'line',data:{labels,datasets:[
-      {label:'Ideal (SP remaining)',data:ideal,borderColor:'#666666',borderDash:[5,4],pointRadius:0,tension:0},
-      {label:'Actual (SP remaining)',data:actual,borderColor:'#4ECB71',backgroundColor:'#4ECB71',pointRadius:5,spanGaps:true,tension:0}
-    ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#AAAAAA',font:{size:11}}}},
-      scales:{x:{ticks:{color:'#666'},grid:{color:'rgba(255,255,255,.05)'}},y:{beginAtZero:true,ticks:{color:'#666'},grid:{color:'rgba(255,255,255,.05)'}}}}}));
+  for(const sq of SQUADS){ drawBurndown(sq); drawVelocity(sq.code); }
+  renderSquadNav();
+}
+// Botões de squad no header fixo: rolam até a seção (não trocam de view)
+function renderSquadNav(){
+  const t=document.getElementById('squadNav'); if(!t) return;
+  t.innerHTML=SQUADS.map(s=>'<button data-sq="'+s.code+'">'+s.code+' · '+s.name+'</button>').join('');
+  t.querySelectorAll('button').forEach(b=>b.onclick=()=>{
+    const sec=document.getElementById('sq-'+b.dataset.sq);
+    if(sec) sec.scrollIntoView({behavior:'smooth',block:'start'});
+    t.querySelectorAll('button').forEach(x=>x.classList.toggle('active',x===b));
+  });
+  // marca o botão da squad visível conforme a página rola
+  if(window.IntersectionObserver && !window.__navObs__){
+    window.__navObs__=new IntersectionObserver(es=>{
+      const vis=es.filter(e=>e.isIntersecting).sort((a,b)=>a.boundingClientRect.top-b.boundingClientRect.top)[0];
+      if(!vis) return;
+      const code=vis.target.id.replace('sq-','');
+      t.querySelectorAll('button').forEach(x=>x.classList.toggle('active',x.dataset.sq===code));
+    },{rootMargin:'-45% 0px -50% 0px'});
+  }
+  if(window.__navObs__){
+    window.__navObs__.disconnect();
+    SQUADS.forEach(s=>{const el2=document.getElementById('sq-'+s.code); if(el2) window.__navObs__.observe(el2);});
   }
 }
 function kpi(l,v,d){return '<div class="kpi-card"><div class="label">'+l+'</div><div class="value">'+v+'</div><div class="delta">'+(d||'')+'</div></div>';}
 
 /* ---------- VIEW 2: Mapa Comparativo ---------- */
 // Abre na primeira aba da nova ordem (AE · EE · OE) quando não há escolha salva no navegador.
-let curSquad = localStorage.getItem('wh_squad')||SQUADS[0].code;
-function renderMapTabs(){
-  const t=document.getElementById('squadTabs');
-  t.innerHTML=SQUADS.map(s=>'<button data-sq="'+s.code+'" class="'+(s.code===curSquad?'active':'')+'">'+s.code+' · '+s.name+'</button>').join('');
-  t.querySelectorAll('button').forEach(b=>b.onclick=()=>{curSquad=b.dataset.sq;localStorage.setItem('wh_squad',curSquad);renderMapTabs();renderMap();});
-}
-function renderMap(){
-  const el=document.getElementById('mapContent');
-  charts.filter(c=>c.canvas&&c.canvas.id.startsWith('map_')).forEach(c=>c.destroy());
+// Detalhamento completo de UMA squad — retorna HTML (o render é feito por renderAll, que monta a
+// página única). Antes isto escrevia direto no DOM e trocava de squad por aba (28/07/2026).
+function squadDetailHtml(curSquad){
   const d=DATA[curSquad];
   const list=d.sprints;
   const closed=list.filter(s=>s.state==='closed');
@@ -958,9 +1011,16 @@ function renderMap(){
           'Reconstruir por dev com os campos de hoje daria números inflados (na AE, 126,5 SP contra os 44,5 SP oficiais), por isso não fazemos.</p>';})()+
       '</div>';
   }
-  html+='<div class="panel"><h2>Velocity — Scope vs Delivered</h2><div class="chart-holder"><canvas id="map_vel"></canvas></div></div>';
-  el.innerHTML=html;
-  const ctx=document.getElementById('map_vel');
+  // canvas com id por squad (map_vel_AE, map_vel_EE…) porque agora as 4 squads convivem na página
+  html+='<div class="panel"><h2>Velocity — Scope vs Delivered</h2><div class="chart-holder"><canvas id="map_vel_'+curSquad+'"></canvas></div></div>';
+  return html;
+}
+// Gráfico de Velocity de uma squad (chamado depois do HTML entrar no DOM)
+function drawVelocity(code){
+  const d=DATA[code]; if(!d) return;
+  const list=d.sprints;
+  const scopeOf=s=>s.state==='active'?s.badgeScope:(s.scopeUnknown?null:s.scope);
+  const ctx=document.getElementById('map_vel_'+code); if(!ctx) return;
   charts.push(new Chart(ctx,{type:'bar',data:{labels:list.map(sprintLabel),datasets:[
     {label:'Scope SP',data:list.map(s=>scopeOf(s)),backgroundColor:'rgba(30,164,193,.35)',borderColor:'#1EA4C1',borderWidth:1},
     {label:'Delivered SP',data:list.map(s=>s.state==='active'?s.doneSP:s.delivered),backgroundColor:'rgba(78,203,113,.5)',borderColor:'#4ECB71',borderWidth:1}
@@ -969,14 +1029,6 @@ function renderMap(){
 }
 
 /* ---------- boot ---------- */
-function showView(v){
-  localStorage.setItem('wh_view',v);
-  document.querySelectorAll('#viewTabs button').forEach(b=>b.classList.toggle('active',b.dataset.view===v));
-  document.getElementById('viewPlan').classList.toggle('hidden',v!=='plan');
-  document.getElementById('viewMap').classList.toggle('hidden',v!=='map');
-  if(DATA){ if(v==='plan') renderPlan(); else {renderMapTabs();renderMap();} }
-}
-document.querySelectorAll('#viewTabs button').forEach(b=>b.onclick=()=>showView(b.dataset.view));
 
 async function boot(){
   const loading=document.getElementById('loading'), eb=document.getElementById('errBox');
@@ -995,8 +1047,8 @@ async function boot(){
       :(LIVE_ENDPOINT
         ?'⚠️ Proxy indisponível — mostrando o último snapshot de '+gen+' · <a href="'+ACTIONS_URL+'" target="_blank">ver execuções</a>'
         :'Mostrando o último snapshot publicado ('+gen+') · <a href="'+ACTIONS_URL+'" target="_blank">ver execuções</a>');
-    document.getElementById('footer').innerHTML='<strong>Método (precisão):</strong> JQL <code>project = X AND sprint is not EMPTY AND issuetype NOT IN subtaskIssueTypes()</code> · SP = campo <strong>Story Points</strong> (customfield_10028), que <strong>já é a somatória DEV + QA</strong> da história/tarefa/bug (validado: Story Points = Story point total (dev, cf 10548) + Story point QA (cf 10546)), somados por status category, sem subtarefas nas 3 squads. <strong>Testamos usar o endpoint “oficial” de relatório de sprint do Jira como fonte única e revertemos</strong>: ele usa uma foto desatualizada dos pontos (mesma fonte do Burndown nativo) e chegou a mostrar a AE com 1,25 SP concluído quando o real era 64+ — por isso o cálculo ao vivo via JQL abaixo continua sendo a fonte da verdade (já bate com o widget “Progresso do sprint” do Jira). Linha 🧪 QA do Desempenho por Dev/QA: campo <strong>Story point QA</strong> — a issue é atribuída ao QA quando entra nos status de QA (PENDING QA = não iniciado; ON TESTING/ON GOING QA · QA VERIFIED/APPROVED BY QA · QA DENIED/REJECTED BY QA = em andamento); entregue só em DONE; issues em dev não contam para o QA. <strong>Issues em statuses CANCEL (categoria “done” no Jira) são excluídas do scope e nunca contam como entrega</strong>. Sprints <strong>fechadas</strong> usam baselines oficiais dos reports validados (badges lidos na época); valores sem baseline aparecem com “≈” (reconstruídos). Boards: AE 479 · OE 474 · EE 475. <strong>🔄 Atualizar dados</strong> consulta o Jira agora mesmo em tempo real (proxy serverless, sem exigir login de quem acessa); se o proxy não estiver configurado, mostra o último snapshot gerado pelo workflow Update data (fallback horário).';
-    showView(localStorage.getItem('wh_view')||'plan');
+    document.getElementById('footer').innerHTML='<strong>Método (precisão):</strong> JQL <code>project = X AND sprint is not EMPTY AND issuetype NOT IN subtaskIssueTypes()</code> · SP = campo <strong>Story Points</strong> (customfield_10028), que <strong>já é a somatória DEV + QA</strong> da história/tarefa/bug (validado: Story Points = Story point total (dev, cf 10548) + Story point QA (cf 10546)), somados por status category, sem subtarefas nas 4 squads. <strong>Testamos usar o endpoint “oficial” de relatório de sprint do Jira como fonte única e revertemos</strong>: ele usa uma foto desatualizada dos pontos (mesma fonte do Burndown nativo) e chegou a mostrar a AE com 1,25 SP concluído quando o real era 64+ — por isso o cálculo ao vivo via JQL abaixo continua sendo a fonte da verdade (já bate com o widget “Progresso do sprint” do Jira). Linha 🧪 QA do Desempenho por Dev/QA: campo <strong>Story point QA</strong> — a issue é atribuída ao QA quando entra nos status de QA (PENDING QA = não iniciado; ON TESTING/ON GOING QA · QA VERIFIED/APPROVED BY QA · QA DENIED/REJECTED BY QA = em andamento); entregue só em DONE; issues em dev não contam para o QA. <strong>Issues em statuses CANCEL (categoria “done” no Jira) são excluídas do scope e nunca contam como entrega</strong>. Sprints <strong>fechadas</strong> usam baselines oficiais dos reports validados (badges lidos na época); valores sem baseline aparecem com “≈” (reconstruídos). Boards: AE 479 · EE 475 · INF 476 · OE 474. <strong>🔄 Atualizar dados</strong> consulta o Jira agora mesmo em tempo real (proxy serverless, sem exigir login de quem acessa); se o proxy não estiver configurado, mostra o último snapshot gerado pelo workflow Update data (fallback horário).';
+    renderAll();
   }catch(e){
     console.error('[weekly-hub] load error',e);
     loading.classList.add('hidden');

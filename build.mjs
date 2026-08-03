@@ -29,7 +29,8 @@ const CR_STAGE_RE = /(CODE\s*REVIEW|PR\s*REVIEW|PULL\s*REQUEST)/i;
 // nos cards principais, incluir subtasks na AE duplicava pontos (badge AE Sprint 5 = 80 SP; com
 // subtasks o hub inflava para 142,5).
 // Board de cada squad (necessário para puxar o relatório oficial de sprint do Jira abaixo).
-const PROJECTS = [ ['AE', 479], ['OE', 474], ['EE', 475] ];
+// INF (Infrastructure, board 476) entrou em 28/07/2026 — mesmas métricas das outras squads.
+const PROJECTS = [ ['AE', 479], ['OE', 474], ['EE', 475], ['INF', 476] ];
 
 async function post(url, body) {
   const r = await fetch(url, {
