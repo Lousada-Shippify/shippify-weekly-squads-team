@@ -262,19 +262,25 @@ export default {
       const auth = 'Basic ' + btoa(`${env.JIRA_EMAIL}:${env.JIRA_API_TOKEN}`);
       const squads = {};
       const sprintReport = {};
-      for (const p of PROJECTS) {
+      // As 4 squads são independentes → rodam EM PARALELO (antes era um laço sequencial e o tempo
+      // total somava: com INF + subtarefas de todas as sprints passou de 18s e começou a estourar
+      // o timeout de 25s do front, caindo pro snapshot. Dentro de cada squad, subtarefas/changelog/
+      // sprint report também vão em paralelo. Corrigido em 03/08/2026.
+      await Promise.all(PROJECTS.map(async (p) => {
         const board = BOARD_BY_PROJECT[p];
         const jql = `project = ${p} AND sprint is not EMPTY AND issuetype NOT IN subtaskIssueTypes()`;
         const issues = await searchAll(auth, jql);
         // Subtarefas de TODAS as histórias com sprint (não só da ativa): a matriz Dev × Sprint mede
-        // alocado/entregue por sprint com a mesma regra DEV = subtarefas, inclusive no histórico
-        // (03/08/2026). Custo baixo — lotes de 100 chaves por request.
+        // alocado/entregue por sprint com a mesma regra DEV = subtarefas, inclusive no histórico.
         const allKeys = issues.map(i => i.key);
-        const subByParent = allKeys.length ? await fetchSubtasksByParent(auth, p, allKeys) : {};
-        const bulk = await fetchChangelogs(auth, issues.map(i => i.id).filter(Boolean));
+        const [subByParent, bulk, report] = await Promise.all([
+          allKeys.length ? fetchSubtasksByParent(auth, p, allKeys) : Promise.resolve({}),
+          fetchChangelogs(auth, issues.map(i => i.id).filter(Boolean)),
+          getSprintReport(auth, board),
+        ]);
         squads[p] = issues.map(i => { const o = slim(i, bulk); o.subs = subByParent[i.key] || []; return o; });
-        sprintReport[p] = await getSprintReport(auth, board);
-      }
+        sprintReport[p] = report;
+      }));
       const data = { generatedAt: new Date().toISOString(), squads, sprintReport, live: true };
       return new Response(JSON.stringify(data), {
         headers: { ...corsHeaders(origin), 'Content-Type': 'application/json' },
