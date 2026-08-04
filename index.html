@@ -9,29 +9,10 @@
      Auditado e alinhado ao DS oficial em 03/08/2026 (references/figma-design-system.md).
      Regra: nenhum valor visual hardcoded no CSS ou no JS — tudo referencia um token daqui. */
   :root {
-    color-scheme: dark;
-    /* Superfícies e texto (DS: Background & Surfaces / Text) */
-    --bg-page:#151515; --bg-surface:#1E1E1E; --bg-card:#242424; --border:#2E2E2E;
-    --text-primary:#EEEEEE; --text-secondary:#AAAAAA; --text-disabled:#666666;
-    /* Brand — usar com intenção semântica (DS: verde=positivo, amarelo=atenção,
-       laranja=alerta, magenta=crítico, violeta=novo/experimental, turquesa=info/dados) */
-    --verde:#4ECB71; --amarelo:#C19D1E; --laranja:#C1591E; --magenta:#C11E42; --violeta:#AA1EC1; --turquesa:#1EA4C1;
-    /* Variantes CLARAS para TEXTO sobre fundo escuro: magenta e violeta puros não atingem
-       contraste 3:1 em corpo pequeno (regra de contraste do DS), então texto usa estas. */
-    --magenta-text:#E8557B; --violeta-text:#D06CE0;
-    --turquesa-ink:#06222B;          /* texto sobre preenchimento turquesa (botão) */
-    /* Fundos translúcidos derivados da marca (DS permite 20%/40%/60%/80%) */
-    --fill-verde:rgba(78,203,113,.18); --fill-amarelo:rgba(193,157,30,.18);
-    --fill-laranja:rgba(193,89,30,.12); --fill-magenta:rgba(193,30,66,.18);
-    --fill-violeta:rgba(170,30,193,.18); --fill-turquesa:rgba(30,164,193,.18);
-    --fill-neutral:rgba(255,255,255,.08); --fill-subtle:rgba(255,255,255,.04);
-    --row-odd:rgba(255,255,255,.015); --track:rgba(255,255,255,.10);
-    --qa-row:rgba(170,30,193,.08); --qa-row-line:rgba(170,30,193,.35);
-    --scroll-thumb:rgba(255,255,255,.16); --scroll-thumb-hover:rgba(255,255,255,.26);
-    --shadow-sticky:0 6px 18px -8px rgba(0,0,0,.9);
-    /* Tipografia (DS: Geologica p/ títulos e dados · Montserrat p/ corpo) */
-    --font-display:Geologica,Montserrat,Inter,Arial,sans-serif;
-    --font-body:Montserrat,Inter,Arial,sans-serif;
+    /* ── TOKENS ESTRUTURAIS (iguais nos dois temas) ─────────────────────────────────────── */
+    /* Tipografia: DS de Dashboard usa UMA família em toda a hierarquia — Geologica (04/08/2026) */
+    --font-display:Geologica,Inter,Arial,sans-serif;
+    --font-body:Geologica,Inter,Arial,sans-serif;
     /* Escala de tipo do DS — sem valores fora dela (antes havia 8/9/10/11.5/12.5/13/13.5/15/19/22/25/26px) */
     --fs-h1:28px; --fs-h2:24px; --fs-h3:20px; --fs-h4:16px;
     --fs-body:16px; --fs-sm:14px; --fs-cap:12px; --fs-label:11px;
@@ -41,6 +22,71 @@
     --sp-4:32px; --sp-5:40px; --sp-6:48px; --sp-8:64px;
     /* Raio (DS: card 8px · tag/pill 4px) */
     --r-sm:4px; --r-md:8px; --r-pill:999px;
+    /* Motion (DS de Dashboard): "operador usa o sistema o dia inteiro — animação lenta cansa" */
+    --dur-fast:100ms; --dur-base:200ms; --ease-out:cubic-bezier(0,0,.2,1);
+  }
+
+  /* ══ TEMA ESCURO (padrão) ══════════════════════════════════════════════════════════════════
+     Paleta aprovada com o time: superfícies #151515/#1E1E1E/#242424 + acentos da marca.
+     ATENÇÃO: --verde/--amarelo/--laranja/--magenta/--violeta/--turquesa são tokens SEMÂNTICOS
+     (positivo / atenção / alerta / crítico / novo / info), não nomes literais de cor — cada tema
+     dá o valor que atinge contraste no seu fundo. O nome legado ficou por compatibilidade. */
+  :root, [data-theme="dark"] {
+    color-scheme: dark;
+    --bg-page:#151515; --bg-surface:#1E1E1E; --bg-card:#242424; --border:#2E2E2E;
+    --text-primary:#EEEEEE; --text-secondary:#AAAAAA;
+    --text-disabled:#757575;         /* era #666666 → 2.90:1, reprovava o mínimo de 3:1 do DS */
+    --verde:#4ECB71; --amarelo:#C19D1E;
+    --laranja:#E1773C;               /* laranja da marca clareada: #C1591E dava 3.74:1 no painel */
+    --magenta:#C11E42; --violeta:#AA1EC1; --turquesa:#1EA4C1;
+    /* variantes claras p/ TEXTO: magenta/violeta puros ficam abaixo de 3:1 no escuro */
+    --magenta-text:#EA6789; --violeta-text:#D06CE0;
+    --turquesa-ink:#06222B;          /* texto sobre preenchimento turquesa (botão) */
+    /* Preenchimento de pill a 12% (era 18%): mantém o hex EXATO da marca no texto e ainda
+       assim passa 4.5:1 — clarear a cor da marca seria pior para a identidade. */
+    --fill-verde:rgba(78,203,113,.12); --fill-amarelo:rgba(193,157,30,.12);
+    --fill-laranja:rgba(193,89,30,.12); --fill-magenta:rgba(193,30,66,.12);
+    --fill-violeta:rgba(170,30,193,.12); --fill-turquesa:rgba(30,164,193,.12);
+    --fill-neutral:rgba(255,255,255,.08); --fill-subtle:rgba(255,255,255,.04);
+    --row-odd:rgba(255,255,255,.015); --track:rgba(255,255,255,.10);
+    --qa-row:rgba(170,30,193,.08); --qa-row-line:rgba(170,30,193,.35);
+    --scroll-thumb:rgba(255,255,255,.16); --scroll-thumb-hover:rgba(255,255,255,.26);
+    --shadow-sticky:0 6px 18px -8px rgba(0,0,0,.9);
+    --grid-line:rgba(255,255,255,.05);   /* linhas de grade dos gráficos */
+    --series-scope:rgba(30,164,193,.35); --series-deliv:rgba(78,203,113,.5);
+  }
+
+  /* ══ TEMA CLARO ════════════════════════════════════════════════════════════════════════════
+     Baseado no DS oficial de Dashboard: escala neutra (gray/100→900) para superfícies e texto,
+     e semânticas no tom 800 para TEXTO/ícone (as únicas que passam 4.5:1 sobre fundo claro) com
+     o tom 100 como preenchimento suave. O verde da marca (#4ECB71) sobre branco dá ~1.8:1 —
+     ilegível —, por isso o claro usa green/800 #145C35. */
+  [data-theme="light"] {
+    color-scheme: light;
+    --bg-page:#F8F9FA;               /* gray/100 */
+    --bg-surface:#FFFFFF;            /* White  — painéis */
+    --bg-card:#F2F2F2;               /* gray/200 — cards e cabeçalho de tabela */
+    --border:#DEE2E6;                /* gray/300 */
+    --text-primary:#212529;          /* gray/900 */
+    --text-secondary:#495057;        /* gray/700 */
+    --text-disabled:#6C757D;         /* gray/500 — mínimo legível sobre #F8F9FA */
+    --verde:#145C35;                 /* green/800  — positivo */
+    --amarelo:#92600A;               /* orange/800 — atenção */
+    --laranja:#9A4A0F;               /* laranja escurecido p/ 4.5:1 (alerta) */
+    --magenta:#9B1C23;               /* red/800    — crítico */
+    --violeta:#810D70;               /* purple/800 — novo/experimental */
+    --turquesa:#1D4ED8;              /* blue/800   — info/dados */
+    --magenta-text:#9B1C23; --violeta-text:#810D70;
+    --turquesa-ink:#FFFFFF;          /* texto sobre preenchimento azul */
+    --fill-verde:#D1FAE5; --fill-amarelo:#FEF3C7; --fill-laranja:#FEF3C7;
+    --fill-magenta:#FEE8E9; --fill-violeta:#FADDFF; --fill-turquesa:#EFF6FF;
+    --fill-neutral:rgba(0,0,0,.06); --fill-subtle:rgba(0,0,0,.04);
+    --row-odd:rgba(0,0,0,.02); --track:rgba(0,0,0,.10);
+    --qa-row:#FADDFF; --qa-row-line:#A3218E;
+    --scroll-thumb:rgba(0,0,0,.22); --scroll-thumb-hover:rgba(0,0,0,.34);
+    --shadow-sticky:0 2px 8px rgba(0,0,0,.08);   /* elevation/2 do DS */
+    --grid-line:rgba(0,0,0,.08);
+    --series-scope:rgba(59,130,246,.30); --series-deliv:rgba(24,160,88,.35);
   }
   *{box-sizing:border-box}
   body{margin:0;font-family:var(--font-display);background:var(--bg-page);color:var(--text-primary)}
@@ -61,6 +107,13 @@
   .squad-nav{display:flex;align-items:center;gap:var(--sp-15);flex-wrap:wrap;padding:0 0 var(--sp-1)}
   .squad-nav-top{font-family:var(--font-display);font-size:var(--fs-label);font-weight:600;color:var(--text-disabled);text-decoration:none;white-space:nowrap}
   .squad-nav-top:hover{color:var(--text-secondary)}
+  /* Alternador de tema — claro/escuro (04/08/2026). Abre seguindo o sistema operacional. */
+  .btn-theme{border:1px solid var(--border);background:var(--bg-card);color:var(--text-secondary);
+    padding:var(--sp-1) var(--sp-15);border-radius:var(--r-md);font-family:var(--font-display);
+    font-size:var(--fs-label);font-weight:600;letter-spacing:.07em;text-transform:uppercase;
+    cursor:pointer;white-space:nowrap;transition:color var(--dur-fast) var(--ease-out),border-color var(--dur-fast) var(--ease-out)}
+  .btn-theme:hover{color:var(--text-primary);border-color:var(--text-disabled)}
+  .btn-theme:focus-visible{outline:2px solid var(--turquesa);outline-offset:2px}
   .squad-nav .squad-tabs{margin-bottom:0}
   /* Seções por squad: âncora de scroll com respiro pro header fixo não cobrir o título */
   .squad-section{scroll-margin-top:152px;padding-top:var(--sp-05);margin-bottom:var(--sp-15)}
@@ -191,6 +244,7 @@
     <nav class="squad-nav">
       <a class="squad-nav-top" href="#resumo-overview" title="Voltar aos resumos do topo">▲ Resumos</a>
       <div class="squad-tabs" id="squadNav"></div>
+      <button class="btn-theme" id="btnTheme" type="button" title="Alternar entre tema claro e escuro">☾ Escuro</button>
     </nav>
   </div>
 
@@ -311,21 +365,50 @@ let charts = [];
 /* Ponte JS ↔ tokens do Design System: Chart.js precisa de cor literal, então lemos os tokens de
    :root em vez de repetir hex no código (auditoria do DS em 03/08/2026). Fallback = mesmo valor
    do token, para o arquivo continuar válido fora do navegador (testes headless). */
-const DS = (()=>{
-  const g=(name,fallback)=>{ try{ const v=getComputedStyle(document.documentElement).getPropertyValue(name).trim(); return v||fallback; }catch(e){ return fallback; } };
-  return {
-    verde:g('--verde','#4ECB71'), amarelo:g('--amarelo','#C19D1E'), laranja:g('--laranja','#C1591E'),
-    magenta:g('--magenta','#C11E42'), magentaText:g('--magenta-text','#E8557B'),
-    violeta:g('--violeta','#AA1EC1'), violetaText:g('--violeta-text','#D06CE0'),
-    turquesa:g('--turquesa','#1EA4C1'), textSec:g('--text-secondary','#AAAAAA'),
-    textDim:g('--text-disabled','#666666'), border:g('--border','#2E2E2E'),
-  };
-})();
-// Séries de gráfico/segmento — só cores da marca, na ordem de prioridade semântica do DS.
-// DS_SERIES: hex literal (Chart.js exige) · DS_SERIES_VAR: var() para HTML, para o tema seguir :root
-const DS_SERIES = [DS.turquesa, DS.amarelo, DS.violeta, DS.laranja, DS.magentaText, DS.verde];
+// Lê um token do tema ATIVO. É função (não constante) porque os valores mudam quando o tema troca.
+const tok=(name,fallback)=>{ try{ const v=getComputedStyle(document.documentElement).getPropertyValue(name).trim(); return v||fallback; }catch(e){ return fallback; } };
+const DS = {
+  get verde(){return tok('--verde','#4ECB71')}, get amarelo(){return tok('--amarelo','#C19D1E')},
+  get laranja(){return tok('--laranja','#C1591E')}, get magenta(){return tok('--magenta','#C11E42')},
+  get magentaText(){return tok('--magenta-text','#E8557B')}, get violeta(){return tok('--violeta','#AA1EC1')},
+  get violetaText(){return tok('--violeta-text','#D06CE0')}, get turquesa(){return tok('--turquesa','#1EA4C1')},
+  get textSec(){return tok('--text-secondary','#AAAAAA')}, get textDim(){return tok('--text-disabled','#666666')},
+  get border(){return tok('--border','#2E2E2E')}, get gridLine(){return tok('--grid-line','rgba(255,255,255,.05)')},
+  get seriesScope(){return tok('--series-scope','rgba(30,164,193,.35)')}, get seriesDeliv(){return tok('--series-deliv','rgba(78,203,113,.5)')},
+};
+// Séries de segmento — só cores da marca, na ordem de prioridade semântica do DS. Em HTML usamos
+// var() para o tema seguir :root; o Chart.js exige literal e por isso lê DS.* na hora de desenhar.
 const DS_SERIES_VAR = ['var(--turquesa)','var(--amarelo)','var(--violeta)','var(--laranja)','var(--magenta-text)','var(--verde)'];
-const GRID_LINE = 'rgba(255,255,255,.05)';
+
+/* ── Tema claro/escuro ──────────────────────────────────────────────────────────────────────
+   Padrão = o do sistema operacional (prefers-color-scheme), com escolha manual persistida no
+   navegador. Ao trocar, os gráficos são redesenhados porque o Chart.js congela a cor no desenho. */
+const THEME_KEY='wh_theme';
+function systemTheme(){ try{ return matchMedia('(prefers-color-scheme: light)').matches?'light':'dark'; }catch(e){ return 'dark'; } }
+function applyTheme(t,redraw){
+  document.documentElement.setAttribute('data-theme',t);
+  const b=document.getElementById('btnTheme');
+  if(b){ // o botão mostra o tema ATIVO; o clique leva ao outro
+    b.textContent = t==='light' ? '☀ Claro' : '☾ Escuro';
+    b.setAttribute('aria-label', t==='light' ? 'Tema claro ativo — clique para escuro' : 'Tema escuro ativo — clique para claro');
+  }
+  if(redraw && typeof DATA!=='undefined' && DATA) renderAll();
+}
+function initTheme(){
+  const saved=(()=>{try{return localStorage.getItem(THEME_KEY)}catch(e){return null}})();
+  applyTheme(saved||systemTheme(),false);
+  const b=document.getElementById('btnTheme');
+  if(b) b.onclick=()=>{
+    const next=document.documentElement.getAttribute('data-theme')==='light'?'dark':'light';
+    try{ localStorage.setItem(THEME_KEY,next); }catch(e){}
+    applyTheme(next,true);
+  };
+  // sem escolha manual salva, acompanha o sistema em tempo real
+  try{ matchMedia('(prefers-color-scheme: light)').addEventListener('change',e=>{
+    let has=null; try{ has=localStorage.getItem(THEME_KEY); }catch(_){}
+    if(!has) applyTheme(e.matches?'light':'dark',true);
+  }); }catch(e){}
+}
 const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const fmtSP = n => (Math.round(n*100)/100).toString();
 // Nome curto para a coluna Dev/QA: só primeiro + último nome (pedido em 28/07/2026).
@@ -820,7 +903,7 @@ function drawBurndown(sq){
     {label:'Ideal (SP remaining)',data:ideal,borderColor:DS.textDim,borderDash:[5,4],pointRadius:0,tension:0},
     {label:'Actual (SP remaining)',data:actual,borderColor:DS.verde,backgroundColor:DS.verde,pointRadius:5,spanGaps:true,tension:0}
   ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:DS.textSec,font:{size:11}}}},
-    scales:{x:{ticks:{color:DS.textDim},grid:{color:GRID_LINE}},y:{beginAtZero:true,ticks:{color:DS.textDim},grid:{color:GRID_LINE}}}}}));
+    scales:{x:{ticks:{color:DS.textDim},grid:{color:DS.gridLine}},y:{beginAtZero:true,ticks:{color:DS.textDim},grid:{color:DS.gridLine}}}}}));
 }
 
 /* ---------- PÁGINA ÚNICA (28/07/2026) ----------
@@ -1123,10 +1206,10 @@ function drawVelocity(code){
   const scopeOf=s=>s.state==='active'?s.badgeScope:(s.scopeUnknown?null:s.scope);
   const ctx=document.getElementById('map_vel_'+code); if(!ctx) return;
   charts.push(new Chart(ctx,{type:'bar',data:{labels:list.map(sprintLabel),datasets:[
-    {label:'Scope SP',data:list.map(s=>scopeOf(s)),backgroundColor:'rgba(30,164,193,.35)',borderColor:DS.turquesa,borderWidth:1},
-    {label:'Delivered SP',data:list.map(s=>s.state==='active'?s.doneSP:s.delivered),backgroundColor:'rgba(78,203,113,.5)',borderColor:DS.verde,borderWidth:1}
+    {label:'Scope SP',data:list.map(s=>scopeOf(s)),backgroundColor:DS.seriesScope,borderColor:DS.turquesa,borderWidth:1},
+    {label:'Delivered SP',data:list.map(s=>s.state==='active'?s.doneSP:s.delivered),backgroundColor:DS.seriesDeliv,borderColor:DS.verde,borderWidth:1}
   ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:DS.textSec,font:{size:11}}}},
-    scales:{x:{ticks:{color:DS.textDim},grid:{display:false}},y:{beginAtZero:true,ticks:{color:DS.textDim},grid:{color:GRID_LINE}}}}}));
+    scales:{x:{ticks:{color:DS.textDim},grid:{display:false}},y:{beginAtZero:true,ticks:{color:DS.textDim},grid:{color:DS.gridLine}}}}}));
 }
 
 /* ---------- boot ---------- */
@@ -1165,6 +1248,7 @@ async function boot(){
    em tempo real, e só se ele não responder cai para o último data.json publicado pelo GitHub
    Actions. Sem login, sem token, sem prompt para quem acessa o site. */
 const ACTIONS_URL='https://github.com/Lousada-Shippify/shippify-weekly-squads-team/actions/workflows/update-data.yml';
+initTheme();
 document.getElementById('btnRefresh').onclick=()=>boot();
 boot();
 </script>
