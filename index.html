@@ -5,49 +5,80 @@
 <title>Weekly Product Hub — Engineering Squads</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js" integrity="sha384-iU8HYtnGQ8Cy4zl7gbNMOhsDTTKX02BTXptVP/vqAWIaTfM7isw76iyZCsjL2eVi" crossorigin="anonymous"></script>
 <style>
+  /* ══ SHIPPIFY DESIGN SYSTEM — camada de tokens ═══════════════════════════════════════════
+     Auditado e alinhado ao DS oficial em 03/08/2026 (references/figma-design-system.md).
+     Regra: nenhum valor visual hardcoded no CSS ou no JS — tudo referencia um token daqui. */
   :root {
     color-scheme: dark;
+    /* Superfícies e texto (DS: Background & Surfaces / Text) */
     --bg-page:#151515; --bg-surface:#1E1E1E; --bg-card:#242424; --border:#2E2E2E;
     --text-primary:#EEEEEE; --text-secondary:#AAAAAA; --text-disabled:#666666;
+    /* Brand — usar com intenção semântica (DS: verde=positivo, amarelo=atenção,
+       laranja=alerta, magenta=crítico, violeta=novo/experimental, turquesa=info/dados) */
     --verde:#4ECB71; --amarelo:#C19D1E; --laranja:#C1591E; --magenta:#C11E42; --violeta:#AA1EC1; --turquesa:#1EA4C1;
+    /* Variantes CLARAS para TEXTO sobre fundo escuro: magenta e violeta puros não atingem
+       contraste 3:1 em corpo pequeno (regra de contraste do DS), então texto usa estas. */
+    --magenta-text:#E8557B; --violeta-text:#D06CE0;
+    --turquesa-ink:#06222B;          /* texto sobre preenchimento turquesa (botão) */
+    /* Fundos translúcidos derivados da marca (DS permite 20%/40%/60%/80%) */
+    --fill-verde:rgba(78,203,113,.18); --fill-amarelo:rgba(193,157,30,.18);
+    --fill-laranja:rgba(193,89,30,.12); --fill-magenta:rgba(193,30,66,.18);
+    --fill-violeta:rgba(170,30,193,.18); --fill-turquesa:rgba(30,164,193,.18);
+    --fill-neutral:rgba(255,255,255,.08); --fill-subtle:rgba(255,255,255,.04);
+    --row-odd:rgba(255,255,255,.015); --track:rgba(255,255,255,.10);
+    --qa-row:rgba(170,30,193,.08); --qa-row-line:rgba(170,30,193,.35);
+    --scroll-thumb:rgba(255,255,255,.16); --scroll-thumb-hover:rgba(255,255,255,.26);
+    --shadow-sticky:0 6px 18px -8px rgba(0,0,0,.9);
+    /* Tipografia (DS: Geologica p/ títulos e dados · Montserrat p/ corpo) */
+    --font-display:Geologica,Montserrat,Inter,Arial,sans-serif;
+    --font-body:Montserrat,Inter,Arial,sans-serif;
+    /* Escala de tipo do DS — sem valores fora dela (antes havia 8/9/10/11.5/12.5/13/13.5/15/19/22/25/26px) */
+    --fs-h1:28px; --fs-h2:24px; --fs-h3:20px; --fs-h4:16px;
+    --fs-body:16px; --fs-sm:14px; --fs-cap:12px; --fs-label:11px;
+    --fs-kpi:28px;                  /* números de KPI em card (Geologica ExtraBold) */
+    /* Grade de 8px (exceção do DS: 4px para espaçamento inline apertado) */
+    --sp-05:4px; --sp-1:8px; --sp-15:12px; --sp-2:16px; --sp-25:20px; --sp-3:24px;
+    --sp-4:32px; --sp-5:40px; --sp-6:48px; --sp-8:64px;
+    /* Raio (DS: card 8px · tag/pill 4px) */
+    --r-sm:4px; --r-md:8px; --r-pill:999px;
   }
   *{box-sizing:border-box}
-  body{margin:0;font-family:Geologica,Montserrat,Inter,Arial,sans-serif;background:var(--bg-page);color:var(--text-primary)}
-  .wrap{max-width:1180px;margin:0 auto;padding:24px 24px 60px}
-  header.top{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px}
-  h1{font-weight:800;font-size:25px;margin:0 0 6px}
-  .subtitle{font-family:Montserrat,sans-serif;color:var(--text-secondary);font-size:13px;margin:0}
-  .cta{display:flex;flex-direction:column;align-items:flex-end;gap:8px}
-  .btn-refresh{border:none;background:var(--turquesa);color:#06222B;padding:11px 20px;border-radius:8px;font-family:Geologica,sans-serif;font-size:14px;font-weight:700;cursor:pointer;transition:filter .15s}
+  body{margin:0;font-family:var(--font-display);background:var(--bg-page);color:var(--text-primary)}
+  .wrap{max-width:1180px;margin:0 auto;padding:var(--sp-3) var(--sp-3) var(--sp-8)}
+  header.top{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:var(--sp-2);margin-bottom:var(--sp-2)}
+  h1{font-weight:800;font-size:var(--fs-h1);margin:0 0 var(--sp-05)}
+  .subtitle{font-family:var(--font-body);color:var(--text-secondary);font-size:var(--fs-sm);margin:0}
+  .cta{display:flex;flex-direction:column;align-items:flex-end;gap:var(--sp-1)}
+  .btn-refresh{border:none;background:var(--turquesa);color:var(--turquesa-ink);padding:var(--sp-15) var(--sp-25);border-radius:var(--r-md);font-family:var(--font-display);font-size:var(--fs-sm);font-weight:700;cursor:pointer;transition:filter .15s}
   .btn-refresh:hover{filter:brightness(1.08)}
+  .btn-refresh:focus-visible{outline:2px solid var(--text-primary);outline-offset:2px}
   .btn-refresh:disabled{opacity:.55;cursor:default}
-  .cta-status{font-family:Montserrat,sans-serif;font-size:12px;color:var(--text-secondary);max-width:340px;text-align:right}
+  .cta-status{font-family:var(--font-body);font-size:var(--fs-cap);color:var(--text-secondary);max-width:340px;text-align:right}
   .cta-status a{color:var(--turquesa);font-weight:600}
-  .view-tabs{display:flex;gap:4px;background:var(--bg-surface);border:1px solid var(--border);padding:4px;border-radius:10px;width:fit-content;margin-bottom:18px}
-  .view-tabs button{border:none;border-bottom:2px solid transparent;background:transparent;padding:9px 18px;border-radius:8px;font-family:Geologica,sans-serif;font-size:13.5px;font-weight:600;cursor:pointer;color:var(--text-secondary);transition:all .15s}
-  .view-tabs button.active{background:var(--bg-card);color:var(--text-primary);border-bottom-color:var(--verde)}
   /* Header fixo da página única (28/07/2026): título + botões de squad sempre visíveis */
-  .sticky-top{position:sticky;top:0;z-index:50;background:var(--bg-page);padding-top:6px;
-    box-shadow:0 6px 18px -8px rgba(0,0,0,.9);border-bottom:1px solid var(--border);margin-bottom:18px}
-  .squad-nav{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:0 0 8px}
-  .squad-nav-top{font-family:Geologica,sans-serif;font-size:11.5px;font-weight:600;color:var(--text-disabled);text-decoration:none;white-space:nowrap}
+  .sticky-top{position:sticky;top:0;z-index:50;background:var(--bg-page);padding-top:var(--sp-05);
+    box-shadow:var(--shadow-sticky);border-bottom:1px solid var(--border);margin-bottom:var(--sp-2)}
+  .squad-nav{display:flex;align-items:center;gap:var(--sp-15);flex-wrap:wrap;padding:0 0 var(--sp-1)}
+  .squad-nav-top{font-family:var(--font-display);font-size:var(--fs-label);font-weight:600;color:var(--text-disabled);text-decoration:none;white-space:nowrap}
   .squad-nav-top:hover{color:var(--text-secondary)}
   .squad-nav .squad-tabs{margin-bottom:0}
   /* Seções por squad: âncora de scroll com respiro pro header fixo não cobrir o título */
-  .squad-section{scroll-margin-top:150px;padding-top:6px;margin-bottom:10px}
-  .squad-title{font-family:Geologica,sans-serif;font-size:19px;margin:26px 0 12px;padding-bottom:8px;border-bottom:2px solid var(--border)}
-  .squad-tabs{display:flex;gap:4px;background:var(--bg-surface);border:1px solid var(--border);padding:4px;border-radius:10px;width:fit-content;margin-bottom:16px}
-  .squad-tabs button{border:none;background:transparent;padding:7px 14px;border-radius:8px;font-family:Geologica,sans-serif;font-size:13px;font-weight:600;cursor:pointer;color:var(--text-secondary)}
+  .squad-section{scroll-margin-top:152px;padding-top:var(--sp-05);margin-bottom:var(--sp-15)}
+  .squad-title{font-family:var(--font-display);font-size:var(--fs-h3);margin:var(--sp-3) 0 var(--sp-15);padding-bottom:var(--sp-1);border-bottom:2px solid var(--border)}
+  .squad-tabs{display:flex;gap:var(--sp-05);background:var(--bg-surface);border:1px solid var(--border);padding:var(--sp-05);border-radius:var(--r-md);width:fit-content;margin-bottom:var(--sp-2)}
+  .squad-tabs button{border:none;background:transparent;padding:var(--sp-1) var(--sp-15);border-radius:var(--r-sm);font-family:var(--font-display);font-size:var(--fs-sm);font-weight:600;cursor:pointer;color:var(--text-secondary)}
+  .squad-tabs button:hover{color:var(--text-primary)}
+  .squad-tabs button:focus-visible{outline:2px solid var(--turquesa);outline-offset:2px}
   .squad-tabs button.active{background:var(--bg-card);color:var(--text-primary);box-shadow:inset 0 -2px 0 var(--turquesa)}
-  .panel{background:var(--bg-surface);border:1px solid var(--border);border-radius:8px;padding:20px 22px;margin-bottom:20px}
-  .panel h2{font-size:16px;font-weight:600;margin:0 0 4px}
-  .panel .panel-sub{font-family:Montserrat,sans-serif;font-size:12.5px;color:var(--text-secondary);margin:0 0 14px}
-  table{width:100%;border-collapse:collapse;font-family:Montserrat,sans-serif;font-size:13px}
-  th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--border);vertical-align:top}
-  th{background:var(--bg-card);color:var(--text-secondary);font-family:Geologica,sans-serif;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
-  tbody tr:nth-child(odd) td{background:rgba(255,255,255,.015)}
+  .panel{background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r-md);padding:var(--sp-3);margin-bottom:var(--sp-25)}
+  .panel h2{font-size:var(--fs-h4);font-weight:600;margin:0 0 var(--sp-05)}
+  .panel .panel-sub{font-family:var(--font-body);font-size:var(--fs-cap);color:var(--text-secondary);margin:0 0 var(--sp-2)}
+  table{width:100%;border-collapse:collapse;font-family:var(--font-body);font-size:var(--fs-sm)}
+  th,td{text-align:left;padding:var(--sp-15) var(--sp-2);border-bottom:1px solid var(--border);vertical-align:top}
+  th{background:var(--bg-card);color:var(--text-secondary);font-family:var(--font-display);font-weight:600;font-size:var(--fs-label);text-transform:uppercase;letter-spacing:.05em}
+  tbody tr:nth-child(odd) td{background:var(--row-odd)}
   tr.total-row td{font-weight:700;background:var(--bg-card)!important}
-  tr.qa-row td{background:rgba(170,30,193,.08)!important;border-top:1px solid rgba(170,30,193,.35)}
+  tr.qa-row td{background:var(--qa-row)!important;border-top:1px solid var(--qa-row-line)}
   /* Desempenho por Dev/QA: colunas de métrica com largura IGUAL entre si (pedido em 28/07/2026).
      table-layout:fixed distribui o espaço pelas larguras declaradas: nome fica maior (texto) e as
      10 colunas numéricas dividem o resto em partes iguais, sem coluna larga/estreita aleatória. */
@@ -55,11 +86,11 @@
      em vez de empurrar a página inteira para o lado (28/07 → INF já tem 8 sprints). O foco abre
      no FINAL (sprints mais recentes) via data-scroll-end. */
   .table-scroll{overflow-x:auto;overflow-y:hidden;max-width:100%;
-    scrollbar-color:var(--border) transparent;scrollbar-width:thin}
-  .table-scroll::-webkit-scrollbar{height:10px}
-  .table-scroll::-webkit-scrollbar-track{background:rgba(255,255,255,.04);border-radius:6px}
-  .table-scroll::-webkit-scrollbar-thumb{background:#3a3a3a;border-radius:6px}
-  .table-scroll::-webkit-scrollbar-thumb:hover{background:#4a4a4a}
+    scrollbar-color:var(--scroll-thumb) transparent;scrollbar-width:thin}
+  .table-scroll::-webkit-scrollbar{height:var(--sp-15)}
+  .table-scroll::-webkit-scrollbar-track{background:var(--fill-subtle);border-radius:var(--r-sm)}
+  .table-scroll::-webkit-scrollbar-thumb{background:var(--scroll-thumb);border-radius:var(--r-sm)}
+  .table-scroll::-webkit-scrollbar-thumb:hover{background:var(--scroll-thumb-hover)}
   .table-scroll table{margin-bottom:0}
   /* 1ª coluna (métrica / nome) fica congelada para não perder a referência ao rolar */
   table.wide-sprints{min-width:max-content}
@@ -68,69 +99,79 @@
   table.wide-sprints tbody td:first-child{background:var(--bg-surface)}
   table.wide-sprints thead th{white-space:nowrap}
   table.devqa{table-layout:fixed}
-  table.devqa th,table.devqa td{width:8%;text-align:center;padding:10px 8px;vertical-align:middle;overflow-wrap:break-word}
+  table.devqa th,table.devqa td{width:8%;text-align:center;padding:var(--sp-15) var(--sp-1);vertical-align:middle;overflow-wrap:break-word}
   table.devqa th:first-child,table.devqa td.col-name{width:20%;text-align:left}
   table.devqa td.col-name{white-space:normal}
-  .pill{display:inline-block;padding:3px 10px;border-radius:4px;font-family:Geologica,sans-serif;font-size:11px;font-weight:600;letter-spacing:.03em;white-space:nowrap}
-  .pill.green{background:rgba(78,203,113,.18);color:var(--verde)}
-  .pill.yellow{background:rgba(193,157,30,.18);color:var(--amarelo)}
-  .pill.red{background:rgba(193,30,66,.18);color:#E8557B}
-  .pill.blue{background:rgba(30,164,193,.18);color:var(--turquesa)}
-  .pill.purple{background:rgba(170,30,193,.18);color:#D06CE0}
-  .pill.gray{background:rgba(255,255,255,.08);color:var(--text-secondary)}
-  .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
-  .kpi-card{background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:14px 16px}
-  .kpi-card .label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;font-weight:600;color:var(--text-secondary);margin-bottom:6px}
-  .kpi-card .value{font-size:26px;font-weight:800}
-  .kpi-card .delta{font-family:Montserrat,sans-serif;font-size:11.5px;margin-top:4px;color:var(--text-secondary)}
+  /* Tag/badge do DS: pill 4px, fundo = brand a 20%, texto = brand, Label 11px uppercase-ish */
+  .pill{display:inline-block;padding:var(--sp-05) var(--sp-15);border-radius:var(--r-sm);font-family:var(--font-display);font-size:var(--fs-label);font-weight:600;letter-spacing:.03em;white-space:nowrap}
+  .pill.green{background:var(--fill-verde);color:var(--verde)}
+  .pill.yellow{background:var(--fill-amarelo);color:var(--amarelo)}
+  .pill.red{background:var(--fill-magenta);color:var(--magenta-text)}
+  .pill.blue{background:var(--fill-turquesa);color:var(--turquesa)}
+  .pill.purple{background:var(--fill-violeta);color:var(--violeta-text)}
+  .pill.gray{background:var(--fill-neutral);color:var(--text-secondary)}
+  .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:var(--sp-15);margin-bottom:var(--sp-2)}
+  .kpi-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r-md);padding:var(--sp-2)}
+  .kpi-card .label{font-size:var(--fs-label);text-transform:uppercase;letter-spacing:.06em;font-weight:600;color:var(--text-secondary);margin-bottom:var(--sp-05)}
+  .kpi-card .value{font-size:var(--fs-kpi);font-weight:800;font-family:var(--font-display)}
+  .kpi-card .delta{font-family:var(--font-body);font-size:var(--fs-cap);margin-top:var(--sp-05);color:var(--text-secondary)}
   .chart-holder{position:relative;height:260px}
-  .squad-block{border:1px solid var(--border);border-radius:8px;padding:18px 20px;margin-bottom:16px;background:var(--bg-card)}
-  .squad-block h3{margin:0 0 2px;font-size:15px}
-  .squad-block .goal{font-family:Montserrat,sans-serif;font-size:12.5px;color:var(--text-secondary);margin:0 0 14px;white-space:pre-line}
-  a.jira-link{color:var(--turquesa);text-decoration:none;font-family:Montserrat,sans-serif;font-size:12.5px;font-weight:600}
+  .squad-block{border:1px solid var(--border);border-radius:var(--r-md);padding:var(--sp-25);margin-bottom:var(--sp-2);background:var(--bg-card)}
+  .squad-block h3{margin:0 0 var(--sp-05);font-size:var(--fs-h4)}
+  .squad-block h4{font-size:var(--fs-sm)}
+  .squad-block .goal{font-family:var(--font-body);font-size:var(--fs-cap);color:var(--text-secondary);margin:0 0 var(--sp-2);white-space:pre-line}
+  a.jira-link{color:var(--turquesa);text-decoration:none;font-family:var(--font-body);font-size:var(--fs-cap);font-weight:600}
   a.jira-link:hover{text-decoration:underline}
-  .alert-box{background:rgba(193,89,30,.12);border-left:4px solid var(--laranja);padding:14px 18px;border-radius:0 8px 8px 0;margin:14px 0}
-  .alert-box h4{margin:0 0 6px;color:var(--laranja);font-size:13.5px}
-  .alert-box p{margin:0;font-family:Montserrat,sans-serif;font-size:12.5px;color:var(--text-primary)}
-  .panel h2 .pill{vertical-align:middle;margin-left:8px}
-  .rework-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px;margin-top:14px}
-  .rework-card{display:flex;gap:12px;align-items:flex-start;background:var(--bg-card);border:1px solid var(--border);border-left:4px solid var(--magenta);border-radius:0 8px 8px 0;padding:12px 14px}
-  .rework-card .rc-count{font-family:Geologica,sans-serif;font-size:22px;font-weight:800;color:#E8557B;line-height:1.1;white-space:nowrap}
-  .rework-card .rc-title{font-size:13px;font-weight:600;margin-bottom:4px}
+  .alert-box{background:var(--fill-laranja);border-left:var(--sp-05) solid var(--laranja);padding:var(--sp-2);border-radius:0 var(--r-md) var(--r-md) 0;margin:var(--sp-2) 0}
+  .alert-box h4{margin:0 0 var(--sp-05);color:var(--laranja);font-size:var(--fs-sm)}
+  .alert-box p{margin:0;font-family:var(--font-body);font-size:var(--fs-cap);color:var(--text-primary)}
+  .panel h2 .pill{vertical-align:middle;margin-left:var(--sp-1)}
+  .rework-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:var(--sp-15);margin-top:var(--sp-2)}
+  .rework-card{display:flex;gap:var(--sp-15);align-items:flex-start;background:var(--bg-card);border:1px solid var(--border);border-left:var(--sp-05) solid var(--magenta);border-radius:0 var(--r-md) var(--r-md) 0;padding:var(--sp-15)}
+  .rework-card .rc-count{font-family:var(--font-display);font-size:var(--fs-h3);font-weight:800;color:var(--magenta-text);line-height:1.1;white-space:nowrap}
+  .rework-card .rc-title{font-size:var(--fs-sm);font-weight:600;margin-bottom:var(--sp-05)}
   .rework-card .rc-title .rc-key{color:var(--turquesa)}
   .rework-card .rc-title .rc-summary{color:var(--text-secondary);font-weight:400}
-  .rework-card .rc-meta{font-family:Montserrat,sans-serif;font-size:11.5px;color:var(--text-secondary)}
-  .rework-small{font-family:Montserrat,sans-serif;font-size:12px;color:var(--text-secondary);margin-top:10px}
-  .loading{display:flex;align-items:center;gap:10px;padding:40px 0;justify-content:center;color:var(--text-secondary);font-size:13.5px;font-family:Montserrat,sans-serif}
-  .spinner{width:16px;height:16px;border-radius:50%;border:2px solid var(--border);border-top-color:var(--verde);animation:spin .7s linear infinite}
+  .rework-card .rc-meta{font-family:var(--font-body);font-size:var(--fs-cap);color:var(--text-secondary)}
+  .rework-small{font-family:var(--font-body);font-size:var(--fs-cap);color:var(--text-secondary);margin-top:var(--sp-15)}
+  .loading{display:flex;align-items:center;gap:var(--sp-15);padding:var(--sp-5) 0;justify-content:center;color:var(--text-secondary);font-size:var(--fs-sm);font-family:var(--font-body)}
+  .spinner{width:var(--sp-2);height:var(--sp-2);border-radius:50%;border:2px solid var(--border);border-top-color:var(--verde);animation:spin .7s linear infinite}
   @keyframes spin{to{transform:rotate(360deg)}}
-  .err{background:rgba(193,30,66,.12);border:1px solid var(--magenta);border-radius:8px;padding:14px 18px;font-family:Montserrat,sans-serif;font-size:13px;margin-bottom:16px}
-  .footer{font-family:Montserrat,sans-serif;font-size:11.5px;color:var(--text-disabled);margin-top:28px;border-top:1px solid var(--border);padding-top:14px;line-height:1.6}
+  @media (prefers-reduced-motion:reduce){.spinner{animation-duration:2s}*{scroll-behavior:auto!important}}
+  .err{background:var(--fill-magenta);border:1px solid var(--magenta);border-radius:var(--r-md);padding:var(--sp-2);font-family:var(--font-body);font-size:var(--fs-sm);margin-bottom:var(--sp-2)}
+  .footer{font-family:var(--font-body);font-size:var(--fs-cap);color:var(--text-disabled);margin-top:var(--sp-4);border-top:1px solid var(--border);padding-top:var(--sp-2);line-height:1.6}
   .hidden{display:none}
-  table.agr th{width:150px;vertical-align:top;background:rgba(30,164,193,.10);color:var(--text-primary);font-size:12px;text-transform:none;letter-spacing:0}
+  table.agr th{width:152px;vertical-align:top;background:var(--fill-turquesa);color:var(--text-primary);font-size:var(--fs-cap);text-transform:none;letter-spacing:0}
   table.agr td{white-space:pre-line}
-  .agr textarea{width:100%;min-height:44px;background:var(--bg-page);border:1px dashed var(--border);border-radius:6px;color:var(--text-primary);font-family:Montserrat,sans-serif;font-size:12.5px;padding:8px;resize:vertical;white-space:pre-line}
-  .agr textarea:focus{outline:none;border-color:var(--turquesa)}
+  .agr textarea{width:100%;min-height:44px;background:var(--bg-page);border:1px dashed var(--border);border-radius:var(--r-sm);color:var(--text-primary);font-family:var(--font-body);font-size:var(--fs-cap);padding:var(--sp-1);resize:vertical;white-space:pre-line}
+  .agr textarea:focus-visible{outline:2px solid var(--turquesa);outline-offset:1px;border-color:var(--turquesa)}
   .agr textarea::placeholder{color:var(--text-disabled)}
-  .deliv{margin:2px 0 10px;font-size:12.5px}
-  .deliv .pill{margin-left:6px}
-  .deliv small.brk{color:var(--text-secondary);font-size:11.5px}
-  .sbar{display:flex;height:9px;border-radius:5px;overflow:hidden;background:rgba(255,255,255,.10);margin:5px 0 3px;max-width:460px}
+  .deliv{margin:var(--sp-05) 0 var(--sp-15);font-size:var(--fs-cap)}
+  .deliv .pill{margin-left:var(--sp-05)}
+  .deliv small.brk{color:var(--text-secondary);font-size:var(--fs-cap)}
+  .sbar{display:flex;height:var(--sp-1);border-radius:var(--r-sm);overflow:hidden;background:var(--track);margin:var(--sp-05) 0;max-width:460px}
   .sbar>div{height:100%}
-  .sbar.lg{height:16px;max-width:none;margin:6px 0 8px}
-  .sbar-legend{display:flex;gap:26px;font-family:Montserrat,sans-serif;font-size:12px;color:var(--text-secondary);margin-bottom:14px;flex-wrap:wrap}
-  .sbar-legend b{font-size:16px;display:block;font-family:Geologica,sans-serif}
+  .sbar.lg{height:var(--sp-2);max-width:none;margin:var(--sp-1) 0}
+  .sbar-legend{display:flex;gap:var(--sp-3);font-family:var(--font-body);font-size:var(--fs-cap);color:var(--text-secondary);margin-bottom:var(--sp-2);flex-wrap:wrap}
+  .sbar-legend b{font-size:var(--fs-h4);display:block;font-family:var(--font-display)}
   /* Decomposição do "Em andamento" por status de subtarefa — mini-barra empilhada + legenda */
-  .ipp{background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin:0 0 16px}
-  .ipp-head{font-family:Montserrat,sans-serif;font-size:12px;font-weight:600;color:var(--text-primary);margin-bottom:9px}
+  .ipp{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r-md);padding:var(--sp-15);margin:0 0 var(--sp-2)}
+  .ipp-head{font-family:var(--font-body);font-size:var(--fs-cap);font-weight:600;color:var(--text-primary);margin-bottom:var(--sp-1)}
   .ipp-head small{font-weight:400;color:var(--text-disabled)}
-  .ipp-bar{display:flex;height:12px;border-radius:6px;overflow:hidden;background:rgba(255,255,255,.06)}
-  .ipp-bar>div{height:100%;min-width:3px}
+  .ipp-bar{display:flex;height:var(--sp-15);border-radius:var(--r-sm);overflow:hidden;background:var(--fill-subtle)}
+  .ipp-bar>div{height:100%;min-width:var(--sp-05)}
   .ipp-bar>div+div{border-left:1px solid var(--bg-card)}
-  .ipp-legend{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:10px}
-  .ipp-item{display:inline-flex;align-items:center;font-family:Montserrat,sans-serif;font-size:11.5px;color:var(--text-secondary)}
-  .ipp-item i{width:9px;height:9px;border-radius:2px;margin-right:6px;flex:none}
-  .ipp-item b{margin-left:6px;color:var(--text-primary);font-family:Geologica,sans-serif;font-size:12px}
+  .ipp-legend{display:flex;flex-wrap:wrap;gap:var(--sp-1) var(--sp-25);margin-top:var(--sp-15)}
+  .ipp-item{display:inline-flex;align-items:center;font-family:var(--font-body);font-size:var(--fs-cap);color:var(--text-secondary)}
+  .ipp-item i{width:var(--sp-1);height:var(--sp-1);border-radius:var(--r-sm);margin-right:var(--sp-05);flex:none}
+  .ipp-item b{margin-left:var(--sp-05);color:var(--text-primary);font-family:var(--font-display);font-size:var(--fs-cap)}
+  /* Utilitários de texto — evitam repetir style="color:…" inline no JS (66 ocorrências no audit) */
+  .t-sec{color:var(--text-secondary)}
+  .t-dim{color:var(--text-disabled)}
+  .t-ok{color:var(--verde)}
+  .t-crit{color:var(--magenta-text)}
+  .num{font-family:var(--font-display);font-variant-numeric:tabular-nums}
+  .micro{font-size:var(--fs-label);line-height:1.3}
 </style>
 </head>
 <body>
@@ -203,7 +244,7 @@ const fmtIdx = v => (v === null || v === undefined || isNaN(v)) ? '—' : (Math.
 // 0 = ótimo · ≤0,25 bom · ≤0,50 atenção · ≤1,00 ruim · >1,00 crítico
 const retBand = v => v===null||v===undefined||isNaN(v) ? {l:'sem base',c:'var(--text-disabled)'}
   : v===0 ? {l:'ÓTIMO',c:'var(--verde)'} : v<=0.25 ? {l:'BOM',c:'var(--amarelo)'}
-  : v<=0.5 ? {l:'ATENÇÃO',c:'var(--laranja)'} : v<=1 ? {l:'RUIM',c:'#E8557B'} : {l:'CRÍTICO',c:'#E8557B'};
+  : v<=0.5 ? {l:'ATENÇÃO',c:'var(--laranja)'} : v<=1 ? {l:'RUIM',c:'var(--magenta-text)'} : {l:'CRÍTICO',c:'var(--magenta-text)'};
 const retPill = v => { const b=retBand(v); return '<span class="pill" style="background:'+b.c+'26;color:'+b.c+'">'+fmtIdx(v)+'</span>'; };
 const retFactor = v => (v===null||v===undefined||isNaN(v)) ? '—' : ('×'+(Math.round((1+v)*100)/100).toFixed(2).replace('.',','));
 // Pessoas que NÃO são desenvolvedoras (PM, Design, etc.) — não entram nas linhas de DEV nem no
@@ -267,6 +308,24 @@ const WORKDAYS = 15;
 let DATA = null;
 let charts = [];
 
+/* Ponte JS ↔ tokens do Design System: Chart.js precisa de cor literal, então lemos os tokens de
+   :root em vez de repetir hex no código (auditoria do DS em 03/08/2026). Fallback = mesmo valor
+   do token, para o arquivo continuar válido fora do navegador (testes headless). */
+const DS = (()=>{
+  const g=(name,fallback)=>{ try{ const v=getComputedStyle(document.documentElement).getPropertyValue(name).trim(); return v||fallback; }catch(e){ return fallback; } };
+  return {
+    verde:g('--verde','#4ECB71'), amarelo:g('--amarelo','#C19D1E'), laranja:g('--laranja','#C1591E'),
+    magenta:g('--magenta','#C11E42'), magentaText:g('--magenta-text','#E8557B'),
+    violeta:g('--violeta','#AA1EC1'), violetaText:g('--violeta-text','#D06CE0'),
+    turquesa:g('--turquesa','#1EA4C1'), textSec:g('--text-secondary','#AAAAAA'),
+    textDim:g('--text-disabled','#666666'), border:g('--border','#2E2E2E'),
+  };
+})();
+// Séries de gráfico/segmento — só cores da marca, na ordem de prioridade semântica do DS.
+// DS_SERIES: hex literal (Chart.js exige) · DS_SERIES_VAR: var() para HTML, para o tema seguir :root
+const DS_SERIES = [DS.turquesa, DS.amarelo, DS.violeta, DS.laranja, DS.magentaText, DS.verde];
+const DS_SERIES_VAR = ['var(--turquesa)','var(--amarelo)','var(--violeta)','var(--laranja)','var(--magenta-text)','var(--verde)'];
+const GRID_LINE = 'rgba(255,255,255,.05)';
 const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const fmtSP = n => (Math.round(n*100)/100).toString();
 // Nome curto para a coluna Dev/QA: só primeiro + último nome (pedido em 28/07/2026).
@@ -651,7 +710,7 @@ function summariesHtml(){
     const d=DATA[sq.code], a=d.active;
     if(!a){rows.push('<tr><td><strong>'+sq.name+'</strong></td><td colspan="6" style="color:var(--text-secondary)">Sem sprint ativa no momento (virada de sprint) — inicie a próxima sprint no board para os dados aparecerem</td></tr>');continue;}
     totScope+=a.badgeScope; totDone+=a.doneSP;
-    rows.push('<tr><td><strong>'+sq.name+'</strong><br><span style="color:var(--text-secondary);font-size:11.5px">'+esc(sprintLabel(a))+' · '+ddmm(a.start)+'–'+ddmm(a.end)+'</span></td>'+
+    rows.push('<tr><td><strong>'+sq.name+'</strong><br><span class="t-sec" style="font-size:var(--fs-cap)">'+esc(sprintLabel(a))+' · '+ddmm(a.start)+'–'+ddmm(a.end)+'</span></td>'+
       '<td style="max-width:280px">'+esc((a.goal||'—').split('\n').slice(0,3).join(' '))+'</td>'+
       '<td>'+fmtSP(a.badgeScope)+'</td><td>'+fmtSP(a.doneSP)+'</td><td>'+fmtSP(a.remaining)+'</td>'+
       '<td>'+statusPill(pct(a.doneSP,a.badgeScope),a.day)+'</td>'+
@@ -711,7 +770,7 @@ function squadPlanHtml(sq){
         +(a.doneList.length>10?'<small class="brk">… +'+(a.doneList.length-10)+' tarefas</small>':'')
       : '<span style="color:var(--text-secondary)">Nenhuma tarefa concluída ainda nesta sprint.</span>';
     html+='<div class="squad-block"><h3>'+sq.name+' — '+esc(sprintLabel(a))+' <span class="pill blue">Day '+a.day+'/'+WORKDAYS+'</span></h3>'+
-      '<h4 style="margin:12px 0 8px;font-size:13px">Sprint Agreements</h4>'+
+      '<h4 style="margin:var(--sp-15) 0 var(--sp-1);font-size:var(--fs-sm)">Sprint Agreements</h4>'+
       '<table class="agr"><tbody>'+
       '<tr><th>Sprint Goal</th><td>'+esc(a.goal||'Sem goal registrado no Jira — defina o goal na sprint do board')+'</td></tr>'+
       '<tr><th>Main deliveries <small style="color:var(--text-secondary)">(auto, por épico/tag)</small></th><td>'+delivHtml+'</td></tr>'+
@@ -720,7 +779,7 @@ function squadPlanHtml(sq){
       '</tbody></table>'+
       '<p style="font-size:11px;color:var(--text-disabled);margin:6px 0 14px">✏️ campos editáveis — salvos automaticamente neste navegador (localStorage).</p>'+
       (()=>{const pd=pct(a.doneSP,a.badgeScope), pi=pct(a.inprogSP,a.badgeScope), pn=Math.max(0,100-pd-pi);
-        return '<h4 style="margin:14px 0 4px;font-size:13px">Progresso do sprint <small style="color:var(--text-secondary);font-weight:400">(por SP — espelha o gadget do Jira)</small></h4>'+
+        return '<h4 style="margin:var(--sp-2) 0 var(--sp-05);font-size:var(--fs-sm)">Progresso do sprint <small style="color:var(--text-secondary);font-weight:400">(por SP — espelha o gadget do Jira)</small></h4>'+
         '<div class="sbar lg"><div style="background:var(--verde);width:'+pd+'%"></div><div style="background:var(--turquesa);width:'+pi+'%"></div></div>'+
         '<div class="sbar-legend">'+
         '<span><b style="color:var(--verde)">'+pd+'%</b>Concluído · '+fmtSP(a.doneSP)+' SP · '+a.doneN+' issues</span>'+
@@ -730,7 +789,7 @@ function squadPlanHtml(sq){
         // mini-barra empilhada proporcional à contagem de subtarefas + legenda com cor por status.
         (()=>{const ipsub=a.inprogSubByStatus||[]; const tot=ipsub.reduce((x,kv)=>x+kv[1],0);
           if(!ipsub.length) return '';
-          const PAL=['#1EA4C1','#C19D1E','#AA1EC1','#C1591E','#E8557B','#5B8DEF','#12B886'];
+          const PAL=DS_SERIES_VAR;   // só cores da marca (DS), via var() para o tema seguir :root
           const seg=ipsub.map((kv,i)=>'<div style="flex:'+kv[1]+';background:'+PAL[i%PAL.length]+'" title="'+esc(kv[0])+' · '+kv[1]+' subtarefa(s)"></div>').join('');
           const leg=ipsub.map((kv,i)=>'<span class="ipp-item"><i style="background:'+PAL[i%PAL.length]+'"></i>'+esc(kv[0])+'<b>'+kv[1]+'</b></span>').join('');
           return '<div class="ipp">'+
@@ -758,10 +817,10 @@ function drawBurndown(sq){
   for(let i=1;i<=WORKDAYS;i++){labels.push('D'+i);ideal.push(Math.max(0,+(a.badgeScope*(1-i/WORKDAYS)).toFixed(1)));actual.push(i===a.day?a.remaining:null);}
   const ctx=document.getElementById('bd_'+sq.code); if(!ctx) return;
   charts.push(new Chart(ctx,{type:'line',data:{labels,datasets:[
-    {label:'Ideal (SP remaining)',data:ideal,borderColor:'#666666',borderDash:[5,4],pointRadius:0,tension:0},
-    {label:'Actual (SP remaining)',data:actual,borderColor:'#4ECB71',backgroundColor:'#4ECB71',pointRadius:5,spanGaps:true,tension:0}
-  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#AAAAAA',font:{size:11}}}},
-    scales:{x:{ticks:{color:'#666'},grid:{color:'rgba(255,255,255,.05)'}},y:{beginAtZero:true,ticks:{color:'#666'},grid:{color:'rgba(255,255,255,.05)'}}}}}));
+    {label:'Ideal (SP remaining)',data:ideal,borderColor:DS.textDim,borderDash:[5,4],pointRadius:0,tension:0},
+    {label:'Actual (SP remaining)',data:actual,borderColor:DS.verde,backgroundColor:DS.verde,pointRadius:5,spanGaps:true,tension:0}
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:DS.textSec,font:{size:11}}}},
+    scales:{x:{ticks:{color:DS.textDim},grid:{color:GRID_LINE}},y:{beginAtZero:true,ticks:{color:DS.textDim},grid:{color:GRID_LINE}}}}}));
 }
 
 /* ---------- PÁGINA ÚNICA (28/07/2026) ----------
@@ -959,9 +1018,9 @@ function squadDetailHtml(curSquad){
       const mx=Math.max(0.01,...hs.map(h=>h[pick]||0));
       return '<div style="display:flex;align-items:flex-end;gap:4px;height:34px;margin-top:10px">'+
         hs.map(h=>{const b=retBand(h[pick]);
-          return '<i style="flex:1;height:'+Math.max(3,(h[pick]||0)/mx*32)+'px;background:'+b.c+';border-radius:2px 2px 0 0;display:block" title="'+esc(h.name)+' · '+fmtIdx(h[pick])+'"></i>';}).join('')+
+          return '<i style="flex:1;height:'+Math.max(3,(h[pick]||0)/mx*32)+'px;background:'+b.c+';border-radius:var(--r-sm) var(--r-sm) 0 0;display:block" title="'+esc(h.name)+' · '+fmtIdx(h[pick])+'"></i>';}).join('')+
         '</div><div style="display:flex;gap:4px;margin-top:3px">'+
-        hs.map(h=>'<span style="flex:1;text-align:center;font-size:8px;line-height:1.3;color:'+(h.state==='active'?retBand(h[pick]).c:'var(--text-disabled)')+'">'+esc(h.name.replace(/^(EE\s+)?Sprint\s+/,'S'))+'<br><b>'+fmtIdx(h[pick])+'</b></span>').join('')+
+        hs.map(h=>'<span style="flex:1;text-align:center;font-size:var(--fs-label);line-height:1.3;color:'+(h.state==='active'?retBand(h[pick]).c:'var(--text-disabled)')+'">'+esc(h.name.replace(/^(EE\s+)?Sprint\s+/,'S'))+'<br><b>'+fmtIdx(h[pick])+'</b></span>').join('')+
         '</div>';};
     const retTile=(title,v,rej,base,hint,affected,pick,reading,noEvents,statusName)=>{
       // 0,00 sem NENHUM evento no histórico da squad não é "ótimo" — é falta de instrumentação.
@@ -974,15 +1033,15 @@ function squadDetailHtml(curSquad){
         '<div class="delta"><span class="pill" style="background:'+b.c+'26;color:'+b.c+'">'+b.l+'</span></div>'+
         '<div class="delta">'+rej+' '+(rej===1?'retorno':'retornos')+' ÷ '+base+' card'+(base===1?'':'s')+' '+hint+' · '+affected+' card'+(affected===1?'':'s')+' afetado'+(affected===1?'':'s')+'</div>'+
         (reading?'<div class="delta" style="color:var(--text-disabled)">'+reading+'</div>':'')+
-        '<div class="sbar" style="margin-top:8px"><div style="background:var(--verde);width:16.6%"></div><div style="background:var(--amarelo);width:16.7%"></div><div style="background:var(--laranja);width:33.4%"></div><div style="background:#E8557B;width:33.3%"></div></div>'+
-        '<div style="position:relative;height:12px;font-size:9px"><span style="position:absolute;left:'+Math.min(100,Math.max(0,(v||0)/1.5*100))+'%;transform:translateX(-50%);font-weight:800;color:'+b.c+'">▲</span></div>'+
+        '<div class="sbar" style="margin-top:8px"><div style="background:var(--verde);width:16.6%"></div><div style="background:var(--amarelo);width:16.7%"></div><div style="background:var(--laranja);width:33.4%"></div><div style="background:var(--magenta-text);width:33.3%"></div></div>'+
+        '<div style="position:relative;height:var(--sp-15);font-size:var(--fs-label)"><span style="position:absolute;left:'+Math.min(100,Math.max(0,(v||0)/1.5*100))+'%;transform:translateX(-50%);font-weight:800;color:'+b.c+'">▲</span></div>'+
         retSpark(pick)+
       '</div>';};
     const maxIrq=Math.max(0.01,...R.hist.map(h=>h.irq||0));
     const sparks=R.hist.map(h=>{const b=retBand(h.irq);
       return '<div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:4px">'+
-        '<div style="width:100%;height:'+Math.max(3,(h.irq||0)/maxIrq*54)+'px;background:'+b.c+';border-radius:3px 3px 0 0" title="'+esc(h.name)+' — retorno QA '+fmtIdx(h.irq)+' ('+h.rejQA+' ÷ '+h.baseQA+')"></div>'+
-        '<div style="font-size:9px;color:var(--text-secondary);text-align:center;line-height:1.25">'+esc(h.name.replace(/^Sprint\s+/,'S'))+(h.state==='active'?' ⬅️':'')+'<br><strong style="color:'+b.c+'">'+fmtIdx(h.irq)+'</strong></div></div>';}).join('');
+        '<div style="width:100%;height:'+Math.max(3,(h.irq||0)/maxIrq*54)+'px;background:'+b.c+';border-radius:var(--r-sm) var(--r-sm) 0 0" title="'+esc(h.name)+' — retorno QA '+fmtIdx(h.irq)+' ('+h.rejQA+' ÷ '+h.baseQA+')"></div>'+
+        '<div style="font-size:var(--fs-label);color:var(--text-secondary);text-align:center;line-height:1.25">'+esc(h.name.replace(/^Sprint\s+/,'S'))+(h.state==='active'?' ⬅️':'')+'<br><strong style="color:'+b.c+'">'+fmtIdx(h.irq)+'</strong></div></div>';}).join('');
     html+='<div class="panel"><h2>🎯 Índice de retorno — retrabalho médio por card <span class="pill blue">'+esc(sprintLabel(a))+'</span></h2>'+
       '<p class="panel-sub">Quantas vezes, em média, um card volta antes de passar — <strong>0 é ótimo</strong>. Base = cards que efetivamente chegaram ao estágio (changelog do Jira). Alimenta a re-estimativa: <strong>estimativa ajustada = estimativa prévia × (1 + índice)</strong>.</p>'+
       '<div class="kpi-grid">'+
@@ -994,18 +1053,18 @@ function squadDetailHtml(curSquad){
           (R.all.rejCode||0)===0,'CODE REVIEW REJECTED')+
         '<div class="kpi-card" style="border-left:3px solid var(--turquesa)">'+
           '<div class="label">Fator de re-estimativa</div>'+
-          '<div class="value" style="font-size:22px">QA '+retFactor(rc.irq)+' <span style="color:var(--text-disabled);font-size:15px">/</span> Dev '+retFactor(rc.irc)+'</div>'+
+          '<div class="value" style="font-size:var(--fs-h3)">QA '+retFactor(rc.irq)+' <span class="t-dim" style="font-size:var(--fs-h4)">/</span> Dev '+retFactor(rc.irc)+'</div>'+
           '<div class="delta">Sprint atual. Histórico (todas as sprints): <strong>QA '+retFactor(R.all.irq)+' · Dev '+retFactor(R.all.irc)+'</strong></div>'+
           (rc.irq!=null?'<div class="delta">Ex.: 3 SP de QA → <strong style="color:var(--verde)">'+fmtIdx(3*(1+rc.irq))+' SP</strong> reais.</div>':'')+
         '</div>'+
       '</div>'+
-      '<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:10px;color:var(--text-secondary);margin:-4px 0 12px">'+
-        '<span><i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--verde);margin-right:4px"></i><b>0</b> ótimo</span>'+
-        '<span><i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--amarelo);margin-right:4px"></i><b>≤0,25</b> bom</span>'+
-        '<span><i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--laranja);margin-right:4px"></i><b>≤0,50</b> atenção</span>'+
-        '<span><i style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#E8557B;margin-right:4px"></i><b>≤1,00</b> ruim · <b>&gt;1,00</b> crítico</span>'+
+      '<div style="display:flex;gap:14px;flex-wrap:wrap;font-size:var(--fs-label);color:var(--text-secondary);margin:0 0 var(--sp-15)">'+
+        '<span><i style="display:inline-block;width:var(--sp-1);height:var(--sp-1);border-radius:var(--r-sm);background:var(--verde);margin-right:var(--sp-05)"></i><b>0</b> ótimo</span>'+
+        '<span><i style="display:inline-block;width:var(--sp-1);height:var(--sp-1);border-radius:var(--r-sm);background:var(--amarelo);margin-right:var(--sp-05)"></i><b>≤0,25</b> bom</span>'+
+        '<span><i style="display:inline-block;width:var(--sp-1);height:var(--sp-1);border-radius:var(--r-sm);background:var(--laranja);margin-right:var(--sp-05)"></i><b>≤0,50</b> atenção</span>'+
+        '<span><i style="display:inline-block;width:var(--sp-1);height:var(--sp-1);border-radius:var(--r-sm);background:var(--magenta-text);margin-right:var(--sp-05)"></i><b>≤1,00</b> ruim · <b>&gt;1,00</b> crítico</span>'+
       '</div>'+
-      '<h4 style="margin:6px 0 8px;font-size:13px">📈 Evolução e média histórica — todas as sprints da squad</h4>'+
+      '<h4 style="margin:var(--sp-1) 0;font-size:var(--fs-sm)">📈 Evolução e média histórica — todas as sprints da squad</h4>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start">'+
         '<div class="kpi-grid" style="margin:0">'+
           '<div class="kpi-card"><div class="label">Retorno QA — média geral</div><div class="value" style="color:'+retBand(R.all.irq).c+'">'+fmtIdx(R.all.irq)+'</div><div class="delta">'+R.all.rejQA+' retornos ÷ '+R.all.baseQA+' cards testados · '+R.all.sprints+' sprints</div></div>'+
@@ -1064,10 +1123,10 @@ function drawVelocity(code){
   const scopeOf=s=>s.state==='active'?s.badgeScope:(s.scopeUnknown?null:s.scope);
   const ctx=document.getElementById('map_vel_'+code); if(!ctx) return;
   charts.push(new Chart(ctx,{type:'bar',data:{labels:list.map(sprintLabel),datasets:[
-    {label:'Scope SP',data:list.map(s=>scopeOf(s)),backgroundColor:'rgba(30,164,193,.35)',borderColor:'#1EA4C1',borderWidth:1},
-    {label:'Delivered SP',data:list.map(s=>s.state==='active'?s.doneSP:s.delivered),backgroundColor:'rgba(78,203,113,.5)',borderColor:'#4ECB71',borderWidth:1}
-  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:'#AAAAAA',font:{size:11}}}},
-    scales:{x:{ticks:{color:'#666'},grid:{display:false}},y:{beginAtZero:true,ticks:{color:'#666'},grid:{color:'rgba(255,255,255,.05)'}}}}}));
+    {label:'Scope SP',data:list.map(s=>scopeOf(s)),backgroundColor:'rgba(30,164,193,.35)',borderColor:DS.turquesa,borderWidth:1},
+    {label:'Delivered SP',data:list.map(s=>s.state==='active'?s.doneSP:s.delivered),backgroundColor:'rgba(78,203,113,.5)',borderColor:DS.verde,borderWidth:1}
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:DS.textSec,font:{size:11}}}},
+    scales:{x:{ticks:{color:DS.textDim},grid:{display:false}},y:{beginAtZero:true,ticks:{color:DS.textDim},grid:{color:GRID_LINE}}}}}));
 }
 
 /* ---------- boot ---------- */
