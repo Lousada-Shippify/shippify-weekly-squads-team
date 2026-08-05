@@ -474,6 +474,22 @@ function initTopLink(){
 }
 const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const fmtSP = n => (Math.round(n*100)/100).toString();
+// ── Rótulo de STATUS igual ao Jira ────────────────────────────────────────────────────────────
+// Os statuses customizados do fluxo (CODE REVIEW, PENDING QA, REJECTED BY QA…) já vêm em inglês
+// maiúsculo da API, mas os 3 statuses NATIVOS do Jira voltam traduzidos para pt-BR pelo locale da
+// instância ("Sendo feito", "Tarefas pendentes", "Concluído") — o que deixava um "Sendo feito" no
+// meio de rótulos em inglês. Aqui usamos o nome da COLUNA do board para esses casos, que é o rótulo
+// que a squad vê no Jira. Mapa conferido em 05/08/2026 via /rest/agile/1.0/board/{id}/configuration
+// nos 4 boards (479 AE · 475 EE · 476 INF · 474 OE) — as 12 colunas são idênticas nos quatro.
+const STATUS_LABEL = {
+  'sendo feito':'WORKING IN PROGRESS',   // coluna WORKING IN PROGRESS
+  'tarefas pendentes':'TO-DO',           // coluna TO-DO
+  'concluído':'DONE',                    // coluna DONE
+  'concluido':'DONE'
+};
+// Exibição sempre em maiúsculas (padrão dos statuses do fluxo). NUNCA usar para lógica/regex —
+// as regras (RET_QA_RE, QA_PROG_RE…) continuam lendo o status cru vindo do Jira.
+const stLabel = s => { const k=String(s??'').trim().toLowerCase(); return STATUS_LABEL[k] || String(s??'—').toUpperCase(); };
 // Nome curto para a coluna Dev/QA: só primeiro + último nome (pedido em 28/07/2026).
 // Ignora partículas (da, de, dos…) e, quando o último token é sufixo de família (Junior, Filho,
 // Neto…), usa o sobrenome que vem antes dele — ex.: "Robson Dias Santana Junior" → "Robson Santana",
@@ -949,8 +965,8 @@ function squadPlanHtml(sq){
           if(!tot) return '';
           const u=a.inprogUnits||{sub:0,card:0};
           const PAL=DS_SERIES_VAR;   // só cores da marca (DS), via var() para o tema seguir :root
-          const seg=ipl.map((kv,i)=>'<div style="flex:'+kv[1]+';background:'+PAL[i%PAL.length]+'" title="'+esc(kv[0])+' · '+kv[1]+' unidade(s) de trabalho"></div>').join('');
-          const leg=ipl.map((kv,i)=>'<span class="ipp-item"><i style="background:'+PAL[i%PAL.length]+'"></i>'+esc(kv[0])+'<b>'+kv[1]+'</b></span>').join('');
+          const seg=ipl.map((kv,i)=>'<div style="flex:'+kv[1]+';background:'+PAL[i%PAL.length]+'" title="'+esc(stLabel(kv[0]))+' · '+kv[1]+' unidade(s) de trabalho"></div>').join('');
+          const leg=ipl.map((kv,i)=>'<span class="ipp-item"><i style="background:'+PAL[i%PAL.length]+'"></i>'+esc(stLabel(kv[0]))+'<b>'+kv[1]+'</b></span>').join('');
           return '<div class="ipp">'+
             '<div class="ipp-head">No que o time está trabalhando agora <small>· '+tot+' unidades de trabalho ('+u.sub+' subtarefa'+(u.sub===1?'':'s')+' + '+u.card+' card'+(u.card===1?'':'s')+' sem quebra) — conta a subtarefa quando a história foi quebrada, senão o próprio card, sem contar os dois</small></div>'+
             '<div class="ipp-bar">'+seg+'</div>'+
@@ -1099,7 +1115,7 @@ function squadDetailHtml(curSquad){
       '<tr><th style="width:150px">Sprint Goal</th><td style="white-space:pre-line">'+esc((s.goal||'—'))+'</td></tr>'+
       '<tr><th>Visão geral</th><td>Scope <strong>'+(sc!=null?fmtSP(sc):'—')+' SP</strong> · Entregue <strong style="color:var(--verde)">'+fmtSP(del)+' SP</strong> '+(rate!=null?'<span class="pill '+(rate>=70?'green':(rate>=35?'yellow':'red'))+'">'+rate+'%</span>':'')+' · '+r.doneN+' issues concluídas · Meta: <strong>'+meta+'</strong></td></tr>'+
       '<tr><th>✅ Conquistas</th><td>'+(r.wins.length?r.wins.map(([nm,g])=>'<div class="deliv">• <strong>'+esc(nm)+'</strong> — '+fmtSP(g.sp)+' SP · '+g.n+' issues entregues</div>').join(''):'—')+'</td></tr>'+
-      '<tr><th>🚧 Não concluído</th><td>'+(r.pipe.length?r.pipe.map(([st,v])=>'<span class="pill '+(/conclu|done/i.test(st)?'green':(/pend|block|reject|wait|qa|review/i.test(st)?'yellow':'blue'))+'" style="margin:2px 4px 2px 0">'+esc(st)+' · '+v.n+' · '+fmtSP(v.sp)+' SP</span>').join(' '):'Nada ficou aberto 🎉')+'<br><small style="color:var(--text-secondary)">'+r.openN+' issues · '+fmtSP(r.openSP)+' SP seguiram adiante</small></td></tr>'+
+      '<tr><th>🚧 Não concluído</th><td>'+(r.pipe.length?r.pipe.map(([st,v])=>'<span class="pill '+(/conclu|done/i.test(st)?'green':(/pend|block|reject|wait|qa|review/i.test(st)?'yellow':'blue'))+'" style="margin:2px 4px 2px 0">'+esc(stLabel(st))+' · '+v.n+' · '+fmtSP(v.sp)+' SP</span>').join(' '):'Nada ficou aberto 🎉')+'<br><small style="color:var(--text-secondary)">'+r.openN+' issues · '+fmtSP(r.openSP)+' SP seguiram adiante</small></td></tr>'+
       '<tr><th>🔄 Escopo</th><td>'+(r.cancN?r.cancN+' issue(s) canceladas ('+fmtSP(r.cancSP)+' SP, fora do scope) · ':'')+'Carryover: '+r.openN+' issues / '+fmtSP(r.openSP)+' SP</td></tr>'+
       (recos.length?'<tr><th>🎯 Recomendações</th><td>'+recos.map(t=>'<div class="deliv">• '+t+'</div>').join('')+'</td></tr>':'')+
       '</tbody></table></div>';
@@ -1126,7 +1142,7 @@ function squadDetailHtml(curSquad){
     const entries=Object.entries(a.carryByStatus).sort((x,y)=>y[1].sp-x[1].sp);
     html+='<h3 style="font-size:14px;margin:18px 0 8px">Em qual status o carryover está — '+esc(sprintLabel(a))+' (Day '+a.day+')</h3>'+
       '<table><thead><tr><th>Status</th><th>Issues</th><th>SP</th><th>% dos SP herdados</th></tr></thead><tbody>'+
-      entries.map(([st,v])=>'<tr><td><span class="pill '+(/conclu|done/i.test(st)?'green':(/pend|block|reject|wait/i.test(st)?'yellow':'blue'))+'">'+esc(st)+'</span></td><td>'+v.n+'</td><td>'+fmtSP(v.sp)+'</td><td>'+pct(v.sp,a.carrySP)+'%</td></tr>').join('')+
+      entries.map(([st,v])=>'<tr><td><span class="pill '+(/conclu|done/i.test(st)?'green':(/pend|block|reject|wait/i.test(st)?'yellow':'blue'))+'">'+esc(stLabel(st))+'</span></td><td>'+v.n+'</td><td>'+fmtSP(v.sp)+'</td><td>'+pct(v.sp,a.carrySP)+'%</td></tr>').join('')+
       '<tr class="total-row"><td>Total</td><td>'+a.carryN+'</td><td>'+fmtSP(a.carrySP)+'</td><td>100%</td></tr></tbody></table>';
   }
   html+='</div>';
@@ -1164,7 +1180,7 @@ function squadDetailHtml(curSquad){
       '<div class="panel"><h2>🔁 Cards com retrabalho por rejeição'+(reworkBig.length?' <span class="pill red">'+reworkBig.length+' com 2+ rejeições</span>':'')+'</h2>'+
       (reworkBig.length?'<div class="rework-grid">'+reworkBig.map(r=>
         '<div class="rework-card"><div class="rc-count">'+r.total+'x</div><div><div class="rc-title"><span class="rc-key">'+esc(r.key)+'</span> · <span class="rc-summary">'+esc((r.summary||'').slice(0,60))+'</span></div>'+
-        '<div class="rc-meta">'+esc(r.assignee)+' · '+r.rejCode+' de código / '+r.rejQA+' de QA · agora em <span class="pill '+(/conclu|done/i.test(r.status||'')?'green':'yellow')+'">'+esc(r.status||'—')+'</span></div></div></div>'
+        '<div class="rc-meta">'+esc(r.assignee)+' · '+r.rejCode+' de código / '+r.rejQA+' de QA · agora em <span class="pill '+(/conclu|done/i.test(r.status||'')?'green':'yellow')+'">'+esc(stLabel(r.status))+'</span></div></div></div>'
       ).join('')+'</div>':'')+
       (reworkSmall.length?'<div class="rework-small">+ '+reworkSmall.length+' card(s) com 1 rejeição.</div>':'')+
       '</div>'
