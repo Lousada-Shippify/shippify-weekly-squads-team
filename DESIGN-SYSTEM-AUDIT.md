@@ -97,6 +97,50 @@ tabular-nums` no utilitário `.num` para números não "dançarem" entre linhas.
 - O DS recomenda **no máximo 2 cores de marca por tela**. Um dashboard denso usa 6 por
   necessidade semântica (status). É desvio consciente, documentado aqui.
 
+---
+
+## Evolução visual — modelo 1b "Estrutura em faixas" (aplicado em 05/08/2026)
+
+**Referência:** design doc *Evolução Visual — Dashboard*, direção **1b**
+(`claude.ai/design/p/1a2cc115-e4a8-4b8c-9b01-a870d53064a3`).
+
+Das três direções propostas (1a Respiro & Marca · 1b Estrutura em faixas · 1c Mono de marca),
+a escolhida foi a **1b**. O que mudou no `index.html`:
+
+| Elemento | Antes | Depois (1b) |
+|----------|-------|-------------|
+| Topo | 1 bloco, confinado em 1180px | **2 faixas de largura total**: identidade sobre `--band-bg` + navegação sobre `--band-nav-bg`, fechadas por filete de 2px em **Fluxo** |
+| Lockup | ao lado do título, separado por filete | **empilhado** acima do título; sem placa (o suporte já dá o contraste) |
+| Título | h3 (20px) em uma linha | **h1 28px/800** + subtítulo "Engineering Squads" em Fluxo (escuro) / Pulso (claro) |
+| Botão Atualizar | só glifo `⟳` | ícone em linha **+ rótulo** — é a única ação de escrita da página |
+| Trilho de squads | segmented control com caixa e fundo | faixa aberta; **sigla em negrito + nome completo**; ativo = filete de 3px em Fluxo |
+| Estado ativo | turquesa `#1EA4C1` | **Fluxo `#FEDD29`** (a cor da marca; turquesa não é da paleta) |
+| KPIs | 6 cartões com borda e raio | **régua em filete** — sem caixa, divisores de 1px, leitura horizontal |
+| Destaque de KPI | nenhum | `% Done (SP)` e `vs. ideal` recebem filete + número em **Pulso** quando a squad está atrás do ideal |
+| Ícones | emoji (`🎯 📦 🔁 👤 📊 🏁 ✅ ⚠️ 🧪 ⬅️ ✏️ 📈 ⚡`) | **ícones em linha**, traço 1,75px, `currentColor` — helper `ico(nome, tamanho)` |
+| Status do topo | sprint+snapshot no subtítulo E no cta (duplicado) | linha 1 = sprint/dia · linha 2 = origem do dado |
+
+### Tokens novos
+
+`--fluxo` `--pulso` (cores de marca **puras**, só para elementos gráficos — filete, ícone),
+`--band-bg` `--band-nav-bg` `--band-text` `--band-text-sec` `--band-text-dim` `--band-border`
+`--band-accent` `--band-btn-border` (a faixa não acompanha `--bg-page`: é Núcleo no escuro e
+Puro no claro), `--ico-accent` (Fluxo no escuro; `#92600A` no claro, onde Fluxo daria 1,2:1).
+
+### Desvios conscientes em relação ao mockup
+
+- **Padding da faixa de identidade:** 20/16 em vez de 28/24 do mockup. Aqui as faixas são
+  **fixas** (`position:sticky`), então o header fechou em ~188px; com o padding do mockup
+  passaria de 200px e comeria um quinto da tela em laptop.
+- **Lockup monocromático.** O mockup usa `logo-fullcolor.png`; o repo só tem as variantes
+  monocromáticas embutidas em base64 (`--logo`: branca no escuro, `#231F20` no claro). Para
+  usar a colorida basta trocar o data-URI de `--logo` no tema claro — nada mais muda.
+- **Tabela do Overview** mantida como está (colunas `% Done (SP)` / `% Done (issues)` em pill).
+  O mockup propõe uma coluna única "Andamento" com barra; isso é mudança de conteúdo/IA, não
+  de pele, e ficou fora do escopo desta rodada.
+- **`prefers-reduced-motion`** e `:focus-visible` seguem valendo; o anel de foco no trilho
+  passou a ser Fluxo (era turquesa) e é `outline-offset:-2px` porque a faixa tem `overflow-x`.
+
 ## Como manter
 
 Ao adicionar qualquer elemento novo: use `var(--…)`. Se precisar de um valor que não existe,

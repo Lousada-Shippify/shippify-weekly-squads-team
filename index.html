@@ -43,6 +43,21 @@
     /* variantes claras p/ TEXTO: magenta/violeta puros ficam abaixo de 3:1 no escuro */
     --magenta-text:#EA6789; --violeta-text:#D06CE0;
     --turquesa-ink:#06222B;          /* texto sobre preenchimento turquesa (botão) */
+    /* ── Modelo 1b (05/08/2026): FAIXA DE IDENTIDADE + estado ativo em Fluxo ────────────────
+       Fluxo (#FEDD29) e Pulso (#EF404C) entram aqui SEM correção tonal: são elementos
+       gráficos (filete de 2-3px, ícone de seção), não texto — a regra de 4.5:1 não se
+       aplica, e clarear/escurecer a cor da marca num filete descaracterizaria a identidade.
+       Onde essas cores viram TEXTO, continuam valendo --amarelo/--magenta (tonais). */
+    --fluxo:#FEDD29; --pulso:#EF404C;
+    /* A faixa do topo tem seu próprio conjunto de cores porque no escuro ela é Núcleo
+       (#151515) e no claro é Puro (#FFFFFF) — em nenhum dos dois ela acompanha --bg-page. */
+    --band-bg:#151515; --band-nav-bg:#1A1A1A;
+    --band-text:#FFFFFF; --band-text-sec:#DADADA; --band-text-dim:#B4B4B4;
+    --band-border:#333333;
+    --band-accent:#FEDD29;           /* subtítulo "Engineering Squads" sobre a faixa */
+    --band-btn-border:#555555;
+    /* Ícone de título de painel: sobre --bg-surface escuro, Fluxo puro tem contraste de sobra */
+    --ico-accent:#FEDD29;
     /* Preenchimento de pill a 12% (era 18%): mantém o hex EXATO da marca no texto e ainda
        assim passa 4.5:1 — clarear a cor da marca seria pior para a identidade. */
     --fill-verde:rgba(78,203,113,.12); --fill-amarelo:rgba(193,157,30,.12);
@@ -80,6 +95,18 @@
     --turquesa:#1D4ED8;              /* blue/800   — info/dados */
     --magenta-text:#9B1C23; --violeta-text:#810D70;
     --turquesa-ink:#FFFFFF;          /* texto sobre preenchimento azul */
+    /* Modelo 1b no claro: a faixa de identidade é Puro, o lockup vai direto sobre ela (sem
+       placa) e o filete de baixo segue Fluxo — é o que mantém o topo reconhecível nos dois
+       temas. O subtítulo troca Fluxo por Pulso: amarelo sobre branco não tem contraste. */
+    --fluxo:#FEDD29; --pulso:#EF404C;
+    --band-bg:#FFFFFF; --band-nav-bg:#FFFFFF;
+    --band-text:#151515; --band-text-sec:#555555; --band-text-dim:#555555;
+    --band-border:#DADADA;
+    --band-accent:#EF404C;
+    --band-btn-border:#DADADA;
+    /* Fluxo puro sobre painel branco dá ~1,2:1 — o ícone sumiria. No claro ele usa o tom
+       tonal do mesmo semântico (orange/800), que é o que o DS já reserva para "atenção". */
+    --ico-accent:#92600A;
     --fill-verde:#D1FAE5; --fill-amarelo:#FEF3C7; --fill-laranja:#FEF3C7;
     --fill-magenta:#FEE8E9; --fill-violeta:#FADDFF; --fill-turquesa:#EFF6FF;
     --fill-neutral:rgba(0,0,0,.06); --fill-subtle:rgba(0,0,0,.04);
@@ -94,67 +121,92 @@
   *{box-sizing:border-box}
   body{margin:0;font-family:var(--font-display);background:var(--bg-page);color:var(--text-primary)}
   .wrap{max-width:1180px;margin:0 auto;padding:var(--sp-3) var(--sp-3) var(--sp-8)}
+  /* ══ TOPO EM DUAS FAIXAS (modelo 1b, 05/08/2026) ══════════════════════════════════════════
+     Antes o topo era um bloco só, confinado na largura do conteúdo. Agora são duas faixas de
+     largura total: identidade sobre --band-bg (Núcleo no escuro, Puro no claro) fechada por um
+     filete de 2px em Fluxo, e navegação sobre --band-nav-bg. O conteúdo de cada faixa continua
+     alinhado à grade da página por .band-inner, que repete o max-width do .wrap. */
+  .sticky-top{position:sticky;top:0;z-index:50;box-shadow:var(--shadow-sticky);margin-bottom:var(--sp-3)}
+  .band-inner{max-width:1180px;margin:0 auto;padding:0 var(--sp-3)}
+  /* Padding menor que o do mockup (28/24): aqui as duas faixas são FIXAS, então cada pixel de
+     altura sai da área de leitura. Com 20/16 o header fica em ~180px — o respiro do topo que o
+     diagnóstico pedia continua (antes era padding-top de 4px), sem comer meia tela em laptop. */
+  .band-id{background:var(--band-bg);border-bottom:2px solid var(--fluxo);padding:var(--sp-25) 0 var(--sp-2)}
+  .band-id .band-inner{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:var(--sp-3)}
   /* Logotipo horizontal oficial — troca de variante conforme o tema (nunca recolorido).
-     DS: altura mínima 32px, área livre ao redor, sem sombra/rotação/distorção. */
-  /* Lockup do topo: logo | filete | título+subtítulo, no lugar onde antes ficava o rótulo
-     "Product Ops". O título entra em escala reduzida (h3) para não competir com o logotipo,
-     e o filete estica na altura do bloco de texto — os três lêem como uma peça só. */
-  .brand{display:flex;align-items:center;gap:var(--sp-2);min-width:0}
+     DS: altura mínima 32px, área livre ao redor, sem sombra/rotação/distorção.
+     Em 1b o lockup sai de cima do título (empilhado), não mais ao lado dele: sobre a faixa
+     escura ele já tem o contraste do suporte e não precisa da placa nem do filete divisor. */
+  .brand{display:flex;flex-direction:column;gap:var(--sp-15);min-width:0}
   .brand-logo{width:200px;height:34px;background:var(--logo) left center/contain no-repeat;flex:none}
-  .brand-sep{width:1px;align-self:stretch;background:var(--border);flex:none}
   .brand-title{min-width:0}
-  header.top{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:var(--sp-2);margin-bottom:var(--sp-2)}
-  h1{font-weight:800;font-size:var(--fs-h3);line-height:1.2;margin:0}
-  .subtitle{font-family:var(--font-body);color:var(--text-secondary);font-size:var(--fs-cap);margin:var(--sp-05) 0 0}
+  h1{font-weight:800;font-size:var(--fs-h1);line-height:1.1;letter-spacing:-.01em;margin:0;color:var(--band-text)}
+  h1 .brand-sub{display:block;font-size:var(--fs-sm);font-weight:600;color:var(--band-accent);margin-top:var(--sp-05);letter-spacing:0}
+  .subtitle{font-family:var(--font-body);color:var(--band-text-sec);font-size:var(--fs-cap);line-height:1.5;margin:0;text-align:right}
   .cta{display:flex;flex-direction:column;align-items:flex-end;gap:var(--sp-1)}
-  /* Ações do topo — só glifo, discretas (04/08/2026). Contorno leve; a cor só aparece no hover. */
   .cta-actions{display:flex;align-items:center;gap:var(--sp-1)}
-  .btn-icon{width:32px;height:32px;flex:none;display:inline-flex;align-items:center;justify-content:center;
-    border:1px solid var(--border);background:transparent;color:var(--text-secondary);
-    border-radius:var(--r-md);font-family:var(--font-display);font-size:16px;line-height:1;cursor:pointer;
-    transition:color var(--dur-fast) var(--ease-out),border-color var(--dur-fast) var(--ease-out),background var(--dur-fast) var(--ease-out)}
-  .btn-icon:hover{color:var(--text-primary);border-color:var(--text-disabled);background:var(--bg-card)}
-  .btn-icon:focus-visible{outline:2px solid var(--turquesa);outline-offset:2px}
-  .btn-icon:disabled{opacity:.4;cursor:default}
-  .cta-status{font-family:var(--font-body);font-size:var(--fs-cap);color:var(--text-secondary);max-width:340px;text-align:right}
-  .cta-status a{color:var(--turquesa);font-weight:600}
-  /* Header fixo da página única (28/07/2026): título + botões de squad sempre visíveis */
-  .sticky-top{position:sticky;top:0;z-index:50;background:var(--bg-page);padding-top:var(--sp-05);
-    box-shadow:var(--shadow-sticky);border-bottom:1px solid var(--border);margin-bottom:var(--sp-2)}
+  /* Ações do topo — ícone em linha (traço 1,75px). O "Atualizar" volta a ter rótulo: é a única
+     ação de escrita da página e o glifo sozinho não dizia o que fazia. */
+  .btn-band{height:34px;flex:none;display:inline-flex;align-items:center;gap:7px;padding:0 var(--sp-15);
+    border:1px solid var(--band-btn-border);background:transparent;color:var(--band-text-sec);
+    border-radius:var(--r-md);font-family:var(--font-display);font-size:var(--fs-sm);font-weight:600;line-height:1;cursor:pointer;
+    transition:color var(--dur-fast) var(--ease-out),border-color var(--dur-fast) var(--ease-out)}
+  .btn-band.icon-only{width:34px;padding:0;justify-content:center}
+  .btn-band:hover{color:var(--band-accent);border-color:var(--band-accent)}
+  .btn-band:focus-visible{outline:2px solid var(--fluxo);outline-offset:2px}
+  .btn-band:disabled{opacity:.4;cursor:default}
+  .cta-status{font-family:var(--font-body);font-size:var(--fs-cap);line-height:1.5;color:var(--band-text-sec);max-width:340px;text-align:right}
+  .cta-status a{color:var(--band-accent);font-weight:600;text-decoration:none}
+  .cta-status a:hover{text-decoration:underline}
+  /* Ícone em linha: herda a cor do texto e alinha na linha de base ótica do rótulo */
+  .ico{flex:none;display:inline-block;vertical-align:-2px}
   /* Altura real do header fixo, medida em runtime (trackStickyHeight) e usada pelo
      scroll-margin-top das âncoras. O valor abaixo é só o fallback antes do 1º measure —
      o header muda de altura quando quebra de linha em telas estreitas, então medir é
      mais confiável que fixar um número. */
   :root{--sticky-h:139px}
-  .squad-nav{display:flex;align-items:center;gap:var(--sp-15);flex-wrap:wrap;padding:0 0 var(--sp-1)}
   /* Seções por squad e o painel de Overview: âncora com respiro pro header fixo não
      cobrir o título ao rolar até eles. */
   .squad-section{scroll-margin-top:calc(var(--sticky-h) + var(--sp-15));padding-top:var(--sp-05);margin-bottom:var(--sp-15)}
   #resumo-overview{scroll-margin-top:calc(var(--sticky-h) + var(--sp-15))}
   .squad-title{font-family:var(--font-display);font-size:var(--fs-h3);margin:var(--sp-3) 0 var(--sp-15);padding-bottom:var(--sp-1);border-bottom:2px solid var(--border)}
-  /* Trilho único de navegação (05/08/2026): "Resumos" e as 4 squads no mesmo grupo,
-     separados por filetes — lê como um segmented control em vez de um link solto. */
-  .squad-tabs{display:flex;align-items:stretch;background:var(--bg-surface);border:1px solid var(--border);
-    border-radius:var(--r-md);width:fit-content;max-width:100%;margin-bottom:var(--sp-2);
-    /* -x:auto em vez de hidden — em telas estreitas o trilho rola em vez de esconder a
-       última squad; -y:hidden mantém os itens recortados pelos cantos arredondados. */
+  /* Faixa de navegação (modelo 1b): o trilho perde a caixa do segmented control e passa a
+     ocupar a faixa inteira. "Resumos" fica à esquerda, separado das squads por um filete
+     vertical; o estado ativo é um filete de 3px em Fluxo sob a aba — sem preenchimento.
+     A sigla vem em negrito e o nome completo ao lado, em peso normal (antes só a sigla). */
+  .band-nav{background:var(--band-nav-bg);border-bottom:1px solid var(--band-border)}
+  .band-nav .band-inner{display:flex;align-items:stretch;
+    /* -x:auto em vez de wrap: em tela estreita o trilho rola em vez de dobrar e engordar a
+       faixa fixa, que rouba altura útil da página. */
     overflow-x:auto;overflow-y:hidden;scrollbar-width:thin}
-  .squad-nav .squad-tabs{margin-bottom:0}
-  .squad-tabs-group{display:flex;align-items:stretch;border-left:1px solid var(--border)}
-  .squad-tabs .squad-nav-top,
-  .squad-tabs button{flex:none;display:inline-flex;align-items:center;border:none;background:transparent;
-    padding:var(--sp-1) var(--sp-15);font-family:var(--font-display);font-size:var(--fs-sm);font-weight:600;
-    color:var(--text-secondary);text-decoration:none;white-space:nowrap;cursor:pointer;
-    transition:color var(--dur-fast) var(--ease-out),background var(--dur-fast) var(--ease-out)}
-  .squad-tabs-group button + button{border-left:1px solid var(--border)}
-  .squad-tabs .squad-nav-top:hover,
-  .squad-tabs button:hover{color:var(--text-primary);background:var(--bg-card)}
-  /* outline para dentro: o container tem overflow:hidden e cortaria o anel de foco */
-  .squad-tabs .squad-nav-top:focus-visible,
-  .squad-tabs button:focus-visible{outline:2px solid var(--turquesa);outline-offset:-2px}
-  .squad-tabs button.active{background:var(--bg-card);color:var(--text-primary);box-shadow:inset 0 -2px 0 var(--turquesa)}
+  .squad-tabs{display:flex;align-items:stretch;min-width:0}
+  .squad-tabs-group{display:flex;align-items:stretch;gap:var(--sp-05)}
+  .squad-nav-top{flex:none;display:inline-flex;align-items:center;gap:7px;
+    padding:var(--sp-15) var(--sp-25) var(--sp-15) 0;margin-right:var(--sp-25);
+    border-right:1px solid var(--band-border);
+    font-family:var(--font-display);font-size:var(--fs-sm);font-weight:600;
+    color:var(--band-text-dim);text-decoration:none;white-space:nowrap;
+    transition:color var(--dur-fast) var(--ease-out)}
+  .squad-tabs button{flex:none;display:inline-flex;align-items:center;gap:var(--sp-05);
+    border:none;background:transparent;padding:var(--sp-15) var(--sp-25);
+    font-family:var(--font-display);font-size:var(--fs-sm);font-weight:700;
+    color:var(--band-text-dim);white-space:nowrap;cursor:pointer;
+    transition:color var(--dur-fast) var(--ease-out),box-shadow var(--dur-fast) var(--ease-out)}
+  .squad-tabs button .sq-name{font-weight:400}
+  .squad-nav-top:hover,
+  .squad-tabs button:hover{color:var(--band-text)}
+  /* outline para dentro: a faixa tem overflow-x e cortaria o anel de foco por fora */
+  .squad-nav-top:focus-visible,
+  .squad-tabs button:focus-visible{outline:2px solid var(--fluxo);outline-offset:-2px}
+  /* Ativo: Fluxo no filete + texto em cheio. O filete é reforço, não o único sinal — quem não
+     distingue a cor lê o estado no peso/contraste do texto. */
+  .squad-tabs button.active{color:var(--band-text);box-shadow:inset 0 -3px 0 var(--fluxo)}
+  .squad-tabs button.active .sq-name{color:var(--band-text-dim)}
   .panel{background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r-md);padding:var(--sp-3);margin-bottom:var(--sp-25)}
-  .panel h2{font-size:var(--fs-h4);font-weight:600;margin:0 0 var(--sp-05)}
+  /* Título de painel (1b): ícone em linha em Fluxo + rótulo em h3/700. Substitui o emoji que
+     abria cada seção — o emoji renderizava diferente por sistema operacional e não tem traço. */
+  .panel h2{display:flex;align-items:center;gap:9px;flex-wrap:wrap;font-size:var(--fs-h3);font-weight:700;margin:0 0 var(--sp-05)}
+  .panel h2 .ico{color:var(--ico-accent)}
   .panel .panel-sub{font-family:var(--font-body);font-size:var(--fs-cap);color:var(--text-secondary);margin:0 0 var(--sp-2)}
   table{width:100%;border-collapse:collapse;font-family:var(--font-body);font-size:var(--fs-sm)}
   th,td{text-align:left;padding:var(--sp-15) var(--sp-2);border-bottom:1px solid var(--border);vertical-align:top}
@@ -193,11 +245,24 @@
   .pill.blue{background:var(--fill-turquesa);color:var(--turquesa)}
   .pill.purple{background:var(--fill-violeta);color:var(--violeta-text)}
   .pill.gray{background:var(--fill-neutral);color:var(--text-secondary)}
-  .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:var(--sp-15);margin-bottom:var(--sp-2)}
-  .kpi-card{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r-md);padding:var(--sp-2)}
-  .kpi-card .label{font-size:var(--fs-label);text-transform:uppercase;letter-spacing:.06em;font-weight:600;color:var(--text-secondary);margin-bottom:var(--sp-05)}
-  .kpi-card .value{font-size:var(--fs-kpi);font-weight:800;font-family:var(--font-display)}
-  .kpi-card .delta{font-family:var(--font-body);font-size:var(--fs-cap);margin-top:var(--sp-05);color:var(--text-secondary)}
+  /* KPIs em filete (modelo 1b): a caixa sai e ficam só as linhas divisórias — a leitura corre
+     na horizontal, como uma régua de números, em vez de seis cartões competindo entre si.
+     O divisor é box-shadow (não border) para não entrar no cálculo de largura das colunas;
+     o overflow:hidden do grid come a sombra da última coluna de cada linha, então não sobra
+     filete solto na borda direita mesmo quando os KPIs quebram em duas linhas. */
+  .kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:0;
+    border-bottom:1px solid var(--border);margin-bottom:var(--sp-3);overflow:hidden}
+  .kpi-card{background:transparent;border:none;border-radius:0;padding:var(--sp-25) var(--sp-25) var(--sp-25) 0;
+    border-top:1px solid var(--border);box-shadow:1px 0 0 var(--border)}
+  .kpi-card + .kpi-card{padding-left:var(--sp-25)}
+  .kpi-card .label{font-size:var(--fs-label);text-transform:uppercase;letter-spacing:.07em;font-weight:700;color:var(--text-secondary);margin-bottom:var(--sp-1)}
+  .kpi-card .value{font-size:var(--fs-kpi);font-weight:800;font-family:var(--font-display);line-height:1;font-variant-numeric:tabular-nums}
+  .kpi-card .delta{font-family:var(--font-body);font-size:var(--fs-cap);margin-top:6px;color:var(--text-secondary)}
+  /* Destaque de KPI: o filete de 3px passa a ser inset (não border-left), senão a borda
+     empurraria o conteúdo da célula 3px para a direita e desalinharia a régua. */
+  .kpi-card.crit{box-shadow:1px 0 0 var(--border),inset 3px 0 0 var(--pulso)}
+  .kpi-card.info{box-shadow:1px 0 0 var(--border),inset 3px 0 0 var(--turquesa)}
+  .kpi-card.crit,.kpi-card.info{padding-left:var(--sp-25)}
   .chart-holder{position:relative;height:260px}
   .squad-block{border:1px solid var(--border);border-radius:var(--r-md);padding:var(--sp-25);margin-bottom:var(--sp-2);background:var(--bg-card)}
   .squad-block h3{margin:0 0 var(--sp-05);font-size:var(--fs-h4)}
@@ -206,7 +271,7 @@
   a.jira-link{color:var(--turquesa);text-decoration:none;font-family:var(--font-body);font-size:var(--fs-cap);font-weight:600}
   a.jira-link:hover{text-decoration:underline}
   .alert-box{background:var(--fill-laranja);border-left:var(--sp-05) solid var(--laranja);padding:var(--sp-2);border-radius:0 var(--r-md) var(--r-md) 0;margin:var(--sp-2) 0}
-  .alert-box h4{margin:0 0 var(--sp-05);color:var(--laranja);font-size:var(--fs-sm)}
+  .alert-box h4{display:flex;align-items:center;gap:7px;margin:0 0 var(--sp-05);color:var(--laranja);font-size:var(--fs-sm)}
   .alert-box p{margin:0;font-family:var(--font-body);font-size:var(--fs-cap);color:var(--text-primary)}
   .panel h2 .pill{vertical-align:middle;margin-left:var(--sp-1)}
   .rework-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:var(--sp-15);margin-top:var(--sp-2)}
@@ -253,39 +318,50 @@
   .t-dim{color:var(--text-disabled)}
   .t-ok{color:var(--verde)}
   .t-crit{color:var(--magenta-text)}
+  /* "atual" (sprint em curso): Fluxo no escuro, tom tonal no claro — substitui o ⬅️ */
+  .t-now{color:var(--ico-accent);font-weight:700}
   .num{font-family:var(--font-display);font-variant-numeric:tabular-nums}
   .micro{font-size:var(--fs-label);line-height:1.3}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <!-- Header FIXO: título, status, atualizar e os botões de squad que rolam até a seção -->
-  <div class="sticky-top">
-    <header class="top">
+<!-- Header FIXO em DUAS FAIXAS de largura total (modelo 1b): identidade sobre Núcleo/Puro
+     fechada por um filete em Fluxo, e navegação (Resumos + squads) na faixa de baixo.
+     Fica FORA do .wrap de propósito — dentro dele as faixas pararariam na largura do
+     conteúdo (1180px) em vez de atravessar a tela. O alinhamento com a grade da página é
+     mantido por .band-inner, que repete o max-width e o padding do .wrap. -->
+<div class="sticky-top">
+  <div class="band-id">
+    <div class="band-inner">
       <div class="brand">
         <span class="brand-logo" role="img" aria-label="Shippify"></span>
-        <span class="brand-sep" aria-hidden="true"></span>
         <div class="brand-title">
-          <h1>Weekly Product — Engineering Squads</h1>
-          <p class="subtitle" id="subtitle">Carregando dados do Jira…</p>
+          <h1>Weekly Product<span class="brand-sub">Engineering Squads</span></h1>
         </div>
       </div>
       <div class="cta">
         <div class="cta-actions">
-          <button class="btn-icon" id="btnRefresh" disabled aria-label="Atualizar dados" title="Atualizar dados — consulta o Jira agora mesmo (tempo real via proxy), sem exigir login de quem acessa"><span aria-hidden="true">⟳</span></button>
-          <button class="btn-icon" id="btnTheme" type="button" title="Alternar entre tema claro e escuro"><span aria-hidden="true">☾</span></button>
+          <button class="btn-band" id="btnRefresh" disabled title="Atualizar dados — consulta o Jira agora mesmo (tempo real via proxy), sem exigir login de quem acessa"><span id="icoRefresh"></span>Atualizar</button>
+          <button class="btn-band icon-only" id="btnTheme" type="button" title="Alternar entre tema claro e escuro"></button>
         </div>
+        <!-- Bloco de status: linha 1 = sprint/dia, linha 2 = origem do dado (tempo real ou
+             snapshot) + link para as execuções. Antes a sprint aparecia no subtítulo à
+             esquerda E o snapshot repetia à direita — a mesma informação em dois lugares. -->
+        <p class="subtitle" id="subtitle">Carregando dados do Jira…</p>
         <div class="cta-status" id="ctaStatus">Carregando…</div>
       </div>
-    </header>
-    <nav class="squad-nav">
+    </div>
+  </div>
+  <nav class="band-nav" aria-label="Navegação por squad">
+    <div class="band-inner">
       <div class="squad-tabs">
-        <a class="squad-nav-top" href="#resumo-overview" title="Voltar aos resumos do topo">▲ Resumos</a>
+        <a class="squad-nav-top" href="#resumo-overview" title="Voltar aos resumos do topo"><span id="icoTop"></span>Resumos</a>
         <div class="squad-tabs-group" id="squadNav"></div>
       </div>
-    </nav>
-  </div>
-
+    </div>
+  </nav>
+</div>
+<div class="wrap">
   <div id="errBox" class="err hidden"></div>
   <div id="loading" class="loading"><div class="spinner"></div><span id="loadingMsg">Carregando data.json…</span></div>
 
@@ -342,7 +418,7 @@ const retFactor = v => (v===null||v===undefined||isNaN(v)) ? '—' : ('×'+(Math
 // Pessoas que NÃO são desenvolvedoras (PM, Design, etc.) — não entram nas linhas de DEV nem no
 // TOTAL devs, mesmo que apareçam como responsáveis de alguma subtarefa/história. Ex.: Gabriel
 // Goldner Silva (PM) e Rayanne Ferreira (Design) na AE. QA já é tratado à parte via QA_OWNER.
-// INF (confirmado em 28/07/2026): Luana é QA (aparece na linha 🧪 QA) e Reginaldo Soares não é dev.
+// INF (confirmado em 28/07/2026): Luana é QA (aparece na linha de QA) e Reginaldo Soares não é dev.
 const NON_DEV = ['Gabriel Goldner Silva', 'Rayanne Ferreira', 'Reginaldo Soares'];
 const SQUADS = [
   // NENHUMA squad inclui subtarefas: com a migração dos pontos para o campo Story Points
@@ -418,6 +494,40 @@ const DS = {
 // var() para o tema seguir :root; o Chart.js exige literal e por isso lê DS.* na hora de desenhar.
 const DS_SERIES_VAR = ['var(--turquesa)','var(--amarelo)','var(--violeta)','var(--laranja)','var(--magenta-text)','var(--verde)'];
 
+/* ── Iconografia em linha ───────────────────────────────────────────────────────────────────
+   Modelo 1b: os emoji que abriam cada seção (🎯 📦 🔁 👤 📊 🏁 ⟳ ☾ ▲) saem e entram ícones de
+   traço, como manda a iconografia da marca: contorno de 1,75px, sem preenchimento, viewBox de
+   24, currentColor. Motivo prático além da estética — emoji renderiza com a fonte de cada
+   sistema operacional (colorido no macOS, chapado no Windows, ausente em alguns Linux), então
+   o mesmo relatório não chegava igual para quem abria.
+   `ico(nome, tamanho)` devolve o SVG pronto para concatenar no HTML gerado. */
+const ICO_PATHS = {
+  refresh:  '<path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/>',
+  moon:     '<path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5Z"/>',
+  sun:      '<circle cx="12" cy="12" r="4.5"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M6 6l1.5 1.5M16.5 16.5L18 18M18 6l-1.5 1.5M7.5 16.5L6 18"/>',
+  up:       '<path d="M6 14l6-6 6 6"/>',
+  flag:     '<path d="M6 21V4"/><path d="M6 5h11l-2 4 2 4H6"/>',
+  target:   '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5"/>',
+  box:      '<path d="M4 8.5 12 4l8 4.5v7L12 20l-8-4.5Z"/><path d="M4 8.5 12 13l8-4.5M12 13v7"/>',
+  loop:     '<path d="M4 12a8 8 0 0 1 8-8 8 8 0 0 1 6.7 3.7"/><path d="M19 4v4h-4"/><path d="M20 12a8 8 0 0 1-8 8 8 8 0 0 1-6.7-3.7"/><path d="M5 20v-4h4"/>',
+  user:     '<circle cx="12" cy="8" r="3.5"/><path d="M5 20c0-3.3 3.1-5.5 7-5.5s7 2.2 7 5.5"/>',
+  bars:     '<path d="M5 20V11"/><path d="M12 20V5"/><path d="M19 20v-6"/>',
+  check:    '<path d="M5 12.5 9.5 17 19 7"/>',
+  alert:    '<path d="M12 4.5 21 19.5H3Z"/><path d="M12 10v4"/><path d="M12 17h.01"/>',
+  flask:    '<path d="M9 3h6"/><path d="M10 3v6L5 19a1.5 1.5 0 0 0 1.3 2h11.4A1.5 1.5 0 0 0 19 19l-5-10V3"/><path d="M7.5 14h9"/>',
+  scope:    '<path d="M4 7h16"/><path d="M4 12h10"/><path d="M4 17h6"/>',
+  bolt:     '<path d="M13 3 5 14h6l-1 7 8-11h-6Z"/>',
+  pencil:   '<path d="M4 20h4L20 8l-4-4L4 16v4Z"/><path d="M14.5 5.5 18.5 9.5"/>',
+  clock:    '<circle cx="12" cy="12" r="8"/><path d="M12 8v4.5l3 1.8"/>',
+  trend:    '<path d="M4 16.5 9.5 11l3.5 3.5L20 8"/><path d="M15 8h5v5"/>',
+  external: '<path d="M14 5h5v5"/><path d="M19 5 10 14"/><path d="M18.5 13.5V19H5V5.5h5.5"/>',
+};
+function ico(name,size){
+  const p=ICO_PATHS[name]; if(!p) return '';
+  const s=size||18;
+  return '<span class="ico" aria-hidden="true"><svg width="'+s+'" height="'+s+'" viewBox="0 0 24 24" fill="none" '+
+         'stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">'+p+'</svg></span>';
+}
 /* ── Tema claro/escuro ──────────────────────────────────────────────────────────────────────
    Padrão = o do sistema operacional (prefers-color-scheme), com escolha manual persistida no
    navegador. Ao trocar, os gráficos são redesenhados porque o Chart.js congela a cor no desenho. */
@@ -426,8 +536,8 @@ function systemTheme(){ try{ return matchMedia('(prefers-color-scheme: light)').
 function applyTheme(t,redraw){
   document.documentElement.setAttribute('data-theme',t);
   const b=document.getElementById('btnTheme');
-  if(b){ // só o glifo do tema ATIVO; o clique leva ao outro (o texto vive no aria-label/title)
-    b.innerHTML = '<span aria-hidden="true">'+(t==='light'?'☀':'☾')+'</span>';
+  if(b){ // só o ícone do tema ATIVO; o clique leva ao outro (o texto vive no aria-label/title)
+    b.innerHTML = ico(t==='light'?'sun':'moon',15);
     const lbl = t==='light' ? 'Tema claro ativo — clique para escuro' : 'Tema escuro ativo — clique para claro';
     b.setAttribute('aria-label', lbl);
     b.setAttribute('title', lbl);
@@ -459,7 +569,7 @@ function trackStickyHeight(){
   set();
   try{ new ResizeObserver(set).observe(st); }catch(e){ addEventListener('resize',set); }
 }
-/* ── "▲ Resumos" ────────────────────────────────────────────────────────────────────────────
+/* ── "Resumos" (volta ao topo) ────────────────────────────────────────────────────────────────────────────
    #resumo-overview é o primeiro painel da página, então o destino certo é o topo do
    documento. O salto nativo pelo hash parava com o painel atrás do header fixo quando o
    clique vinha do fim da página; aqui rolamos para 0 e mantemos o hash na URL para o link
@@ -715,7 +825,7 @@ function processSquad(sq, nodes, report){
       }
     }
   }
-  // A pessoa de QA da squad NÃO aparece nas linhas de DEV (ela é representada só na linha 🧪 QA).
+  // A pessoa de QA da squad NÃO aparece nas linhas de DEV (ela é representada só na linha de QA).
   // Casa pelo nome que precede " — QA" no QA_OWNER (ex.: "Nathaly Brasiliano").
   const qaLead=(QA_OWNER[sq.code]||'').split(' — ')[0].trim();
   const isQAperson=nm=>!!qaLead && (nm===qaLead || nm.startsWith(qaLead+' ') || qaLead.startsWith(nm+' '));
@@ -878,7 +988,7 @@ function summariesHtml(){
   // título do Overview não fixa mais um número de sprint — cada linha mostra a sua.
   const anyActive=SQUADS.map(s=>DATA[s.code].active).find(Boolean);
   const dayStr=anyActive?('Day '+anyActive.day+' of '+WORKDAYS):'';
-  let html='<div class="panel" id="resumo-overview"><h2>Overview — sprint atual de cada squad <span class="pill blue">'+dayStr+'</span></h2>'+
+  let html='<div class="panel" id="resumo-overview"><h2>'+ico('flag')+'Overview — sprint atual de cada squad <span class="pill blue">'+dayStr+'</span></h2>'+
     '<p class="panel-sub">SP = campo <strong>Story Points</strong> (customfield_10028), que <strong>já é a somatória dos pontos de DEV + QA</strong> da história/tarefa/bug, somado por status category do board, <strong>sem subtarefas</strong> (os pontos vivem nos cards principais — regra igual aos badges do backlog nas 3 squads) e <strong>excluindo issues canceladas</strong> (statuses CANCEL têm categoria “done” no Jira mas não são entrega). Duas métricas: <strong>% Done (SP)</strong> = Completed SP ÷ Scope SP · <strong>% Done (issues)</strong> = contagem de tickets.</p>'+
     '<table><thead><tr><th>Squad</th><th>Sprint Goal</th><th>Scope SP</th><th>Completed SP</th><th>Remaining SP</th><th>% Done (SP)</th><th>% Done (issues)</th></tr></thead><tbody>'+rows.join('')+
     '<tr class="total-row"><td>Total</td><td>—</td><td>'+fmtSP(totScope)+'</td><td>'+fmtSP(totDone)+'</td><td>'+fmtSP(totScope-totDone)+'</td><td>'+pct(totDone,totScope)+'%</td><td>—</td></tr>'+
@@ -898,7 +1008,7 @@ function summariesHtml(){
       '<td>'+retPill(r.all.irc)+'<br><small style="color:var(--text-secondary)">'+r.all.rejCode+' ÷ '+r.all.baseCR+'</small></td>'+
       '<td><strong>QA '+retFactor(r.all.irq)+'</strong> · Dev '+retFactor(r.all.irc)+'</td></tr>';
   }).join('');
-  html+='<div class="panel" id="resumo-retorno"><h2>🎯 Índice de retorno — retrabalho médio por card <span class="pill blue">0 é ótimo</span></h2>'+
+  html+='<div class="panel" id="resumo-retorno"><h2>'+ico('target')+'Índice de retorno — retrabalho médio por card <span class="pill blue">0 é ótimo</span></h2>'+
     '<p class="panel-sub">Quantas vezes, em média, um card <strong>volta</strong> antes de passar. <strong>Retorno QA</strong> = entradas em REJECTED BY QA / QA DENIED ÷ cards que chegaram ao QA · <strong>Retorno código</strong> = entradas em CODE REVIEW REJECTED ÷ cards que entraram em code review (changelog do Jira, inclui reincidências). Faixas: <strong style="color:var(--verde)">0 ótimo</strong> · ≤0,25 bom · ≤0,50 atenção · ≤1,00 ruim · &gt;1,00 crítico. O <strong>fator</strong> (1 + índice histórico) é o multiplicador sugerido para a pontuação prévia no refinamento. <strong>“sem eventos”</strong> = a squad nunca registrou aquele status de rejeição no histórico: o índice não é 0 por qualidade, é falta de instrumentação no fluxo do board — verificar antes de comparar squads. <strong>Escopo:</strong> só cards dentro de sprint, sem subtarefas.</p>'+
     '<table><thead><tr><th>Squad</th><th>↩︎ Retorno QA (sprint atual)</th><th>↩︎ Retorno código (sprint atual)</th><th>Média histórica QA</th><th>Média histórica código</th><th>Fator de re-estimativa</th></tr></thead><tbody>'+retRows+'</tbody></table></div>';
   return html;
@@ -912,6 +1022,9 @@ function squadPlanHtml(sq){
     const pSP=pct(a.doneSP,a.badgeScope), pIss=pct(a.doneN,a.todoN+a.inprogN+a.doneN);
     const idealRem=a.badgeScope*(1-a.day/WORKDAYS);
     const diff=a.remaining-idealRem;
+    // "atrás do ideal" com folga de 0,5 SP (mesmo limiar do rótulo abaixo, para o filete e o
+    // texto nunca discordarem entre si).
+    const behind=diff>0.5;
     const agrKey=f=>'wh_agr_'+sq.code+'_'+a.id+'_'+f;
     const agrPh={constraints:'Ex.: feriados, férias (Patrick 08/07~20/07), Copa do Mundo, deadlines críticos…',risks:'Ex.: riscos de deploy, interdependências com outras squads…',validations:'Ex.: validação com Amazon (MM) em 08/07 — teste "live"…'};
     const agrRow=(f,lbl)=>'<tr><th>'+lbl+'</th><td><textarea data-agr="'+f+'" data-key="'+agrKey(f)+'" placeholder="'+agrPh[f]+'"></textarea></td></tr>';
@@ -924,7 +1037,7 @@ function squadPlanHtml(sq){
         (g.ex.length?'<br><small class="brk" style="color:var(--text-disabled)">↳ '+esc(g.ex.map(s=>s.slice(0,80)).join(' · '))+'</small>':'')+'</div>';
     }).join('')||'—';
     const doneListHtml=(a.doneList&&a.doneList.length)
-      ? a.doneList.slice(0,10).map(t=>'<div class="deliv">✅ <strong>'+esc(t.key)+'</strong> — '+esc(t.summary.slice(0,90))+' <small style="color:var(--text-secondary)">('+fmtSP(t.sp)+' SP)</small></div>').join('')
+      ? a.doneList.slice(0,10).map(t=>'<div class="deliv">'+ico('check',14)+' <strong>'+esc(t.key)+'</strong> — '+esc(t.summary.slice(0,90))+' <small style="color:var(--text-secondary)">('+fmtSP(t.sp)+' SP)</small></div>').join('')
         +(a.doneList.length>10?'<small class="brk">… +'+(a.doneList.length-10)+' tarefas</small>':'')
       : '<span style="color:var(--text-secondary)">Nenhuma tarefa concluída ainda nesta sprint.</span>';
     html+='<div class="squad-block"><h3>'+sq.name+' — '+esc(sprintLabel(a))+' <span class="pill blue">Day '+a.day+'/'+WORKDAYS+'</span></h3>'+
@@ -932,10 +1045,10 @@ function squadPlanHtml(sq){
       '<table class="agr"><tbody>'+
       '<tr><th>Sprint Goal</th><td>'+esc(a.goal||'Sem goal registrado no Jira — defina o goal na sprint do board')+'</td></tr>'+
       '<tr><th>Main deliveries <small style="color:var(--text-secondary)">(auto, por épico/tag)</small></th><td>'+delivHtml+'</td></tr>'+
-      '<tr><th>✅ Tarefas concluídas ('+(a.doneList?a.doneList.length:0)+')</th><td>'+doneListHtml+'</td></tr>'+
-      agrRow('constraints','Sprint Constraints ✏️')+agrRow('risks','Risks ✏️')+agrRow('validations','Validations ✏️')+
+      '<tr><th>'+ico('check',14)+' Tarefas concluídas ('+(a.doneList?a.doneList.length:0)+')</th><td>'+doneListHtml+'</td></tr>'+
+      agrRow('constraints','Sprint Constraints '+ico('pencil',13))+agrRow('risks','Risks '+ico('pencil',13))+agrRow('validations','Validations '+ico('pencil',13))+
       '</tbody></table>'+
-      '<p style="font-size:11px;color:var(--text-disabled);margin:6px 0 14px">✏️ campos editáveis — salvos automaticamente neste navegador (localStorage).</p>'+
+      '<p style="font-size:11px;color:var(--text-disabled);margin:6px 0 14px">'+ico('pencil',13)+' campos editáveis — salvos automaticamente neste navegador (localStorage).</p>'+
       (()=>{const pd=pct(a.doneSP,a.badgeScope), pi=pct(a.inprogSP,a.badgeScope), pn=Math.max(0,100-pd-pi);
         return '<h4 style="margin:var(--sp-2) 0 var(--sp-05);font-size:var(--fs-sm)">Progresso do sprint <small style="color:var(--text-secondary);font-weight:400">(por SP — espelha o gadget do Jira)</small></h4>'+
         '<div class="sbar lg"><div style="background:var(--verde);width:'+pd+'%"></div><div style="background:var(--turquesa);width:'+pi+'%"></div></div>'+
@@ -960,13 +1073,13 @@ function squadPlanHtml(sq){
       kpi('Scope SP',fmtSP(a.badgeScope),a.todoN+a.inprogN+a.doneN+' issues')+
       kpi('Completed SP',fmtSP(a.doneSP),a.doneN+' issues done')+
       kpi('Remaining SP',fmtSP(a.remaining),a.todoN+' to do · '+a.inprogN+' in progress')+
-      kpi('% Done (SP)',pSP+'%','ideal dia '+a.day+': '+Math.round(a.day/WORKDAYS*100)+'%')+
+      kpi('% Done (SP)',pSP+'%','ideal dia '+a.day+': '+Math.round(a.day/WORKDAYS*100)+'%',behind?'crit':'')+
       kpi('% Done (issues)',pIss+'%','métrica do gadget Jira')+
-      kpi('vs. ideal',(diff>0.5?'+':'')+fmtSP(diff)+' SP',diff>0.5?'atrás do ideal':(diff<-0.5?'à frente do ideal':'on track'))+
+      kpi('vs. ideal',(diff>0.5?'+':'')+fmtSP(diff)+' SP',diff>0.5?'atrás do ideal':(diff<-0.5?'à frente do ideal':'on track'),behind?'crit':'')+
       (a.cancSP>0?kpi('Cancelled SP',fmtSP(a.cancSP),a.cancN+' issues canceladas — fora do scope'):'')+
       '</div>'+
       '<div class="chart-holder"><canvas id="bd_'+sq.code+'"></canvas></div>'+
-      '<p style="margin:10px 0 0"><a class="jira-link" href="'+boardUrl(sq)+'" target="_blank">↗ Open Sprint Insights in Jira ('+sq.code+') — Progresso + Burndown</a></p></div>';
+      '<p style="margin:10px 0 0"><a class="jira-link" href="'+boardUrl(sq)+'" target="_blank">'+ico('external',13)+' Open Sprint Insights in Jira ('+sq.code+') — Progresso + Burndown</a></p></div>';
   return html;
 }
 // Burndown de uma squad (chamado depois do HTML entrar no DOM)
@@ -1018,7 +1131,9 @@ function renderAll(){
 // Botões de squad no header fixo: rolam até a seção (não trocam de view)
 function renderSquadNav(){
   const t=document.getElementById('squadNav'); if(!t) return;
-  t.innerHTML=SQUADS.map(s=>'<button data-sq="'+s.code+'">'+s.code+' · '+s.name+'</button>').join('');
+  // 1b: sigla em negrito + nome completo em peso normal (o "·" saiu — a diferença de peso já
+  // separa os dois, e o ponto virava ruído repetido 4 vezes no trilho).
+  t.innerHTML=SQUADS.map(s=>'<button data-sq="'+s.code+'">'+s.code+' <span class="sq-name">'+esc(s.name)+'</span></button>').join('');
   t.querySelectorAll('button').forEach(b=>b.onclick=()=>{
     const sec=document.getElementById('sq-'+b.dataset.sq);
     if(sec) sec.scrollIntoView({behavior:'smooth',block:'start'});
@@ -1038,7 +1153,12 @@ function renderSquadNav(){
     SQUADS.forEach(s=>{const el2=document.getElementById('sq-'+s.code); if(el2) window.__navObs__.observe(el2);});
   }
 }
-function kpi(l,v,d){return '<div class="kpi-card"><div class="label">'+l+'</div><div class="value">'+v+'</div><div class="delta">'+(d||'')+'</div></div>';}
+function kpi(l,v,d,variant){
+  // variant 'crit' = filete de 3px em Pulso + número na cor de crítico (o único uso de Pulso
+  // na régua de KPIs, conforme 1b: "Pulso só para crítico").
+  const cls='kpi-card'+(variant?' '+variant:'');
+  const vc=variant==='crit'?' class="value t-crit"':' class="value"';
+  return '<div class="'+cls+'"><div class="label">'+l+'</div><div'+vc+'>'+v+'</div><div class="delta">'+(d||'')+'</div></div>';}
 
 /* ---------- VIEW 2: Mapa Comparativo ---------- */
 // Abre na primeira aba da nova ordem (AE · EE · OE) quando não há escolha salva no navegador.
@@ -1052,7 +1172,7 @@ function squadDetailHtml(curSquad){
   const a=d.active;
   const scopeOf=s=>s.state==='active'?s.badgeScope:(s.scopeUnknown?null:s.scope);
   const mk=s=>s.state==='closed'?(s.official?'':' <small title="reconstruído dos campos atuais">≈</small>'):'';
-  const head=list.map(s=>'<th>'+esc(sprintLabel(s))+(s.state==='active'?' ⬅️':'')+'<br><small style="font-weight:400">'+(s.start?ddmm(s.start):'')+'–'+(s.end?ddmm(s.end):'')+'</small></th>').join('');
+  const head=list.map(s=>'<th>'+esc(sprintLabel(s))+(s.state==='active'?' <span class="t-now">atual</span>':'')+'<br><small style="font-weight:400">'+(s.start?ddmm(s.start):'')+'–'+(s.end?ddmm(s.end):'')+'</small></th>').join('');
   const rowScope=list.map((s,i)=>{const prev=list[i-1];const v=scopeOf(s),pv=prev?scopeOf(prev):null;
     const g=(pv>0&&v!=null)?Math.round((v-pv)/pv*100):null;
     return '<td>'+(v!=null?fmtSP(v):'—')+mk(s)+(g!==null?' <span class="pill '+(g>30?'red':(g>0?'yellow':'green'))+'">'+(g>0?'+':'')+g+'%</span>':'')+'</td>';}).join('');
@@ -1069,9 +1189,9 @@ function squadDetailHtml(curSquad){
     return '<td>'+pct(dn,tot)+'% <small>('+dn+'/'+tot+')</small>'+mk(s)+'</td>';}).join('');
   // Sprint Goal saiu daqui (05/08/2026): o texto do goal é longo e o min-width:160px que ele
   // exigia esticava todas as colunas de sprint, quebrando o espaçamento da tabela. O dado
-  // continua em "Sprint Agreements" (sprint ativa) e no "🏁 Resumo" (sprint encerrada).
+  // continua em "Sprint Agreements" (sprint ativa) e no "Resumo" (sprint encerrada).
   const rowCanc=list.map(s=>'<td>'+(s.cancSP>0?fmtSP(s.cancSP)+' <small>('+s.cancN+' issues)</small>':'—')+'</td>').join('');
-  let html='<div class="panel"><h2>Métricas-chave — '+d.squad.name+' ('+curSquad+')</h2>'+
+  let html='<div class="panel"><h2>'+ico('bars')+'Métricas-chave — '+d.squad.name+' ('+curSquad+')</h2>'+
     '<p class="panel-sub">SP = campo <strong>Story Points</strong> (customfield_10028) — <strong>já é a somatória dos pontos de DEV + QA</strong> registrados nas histórias, tarefas e bugs. Sprints fechadas usam os <strong>números oficiais dos reports</strong> (badges do Jira lidos na época) — os campos atuais do Jira não preservam a foto da sprint (scope commitment, SP re-estimados, clones). Valores com "≈" são reconstruídos dos campos atuais. Sprint ativa: leitura ao vivo, excluindo subtarefas e canceladas.</p>'+
     // container com rolagem própria + 1ª coluna fixa: com 8+ sprints a tabela não empurra a página
     '<div class="table-scroll" data-scroll-end="1"><table class="wide-sprints"><thead><tr><th>Métrica</th>'+head+'</tr></thead><tbody>'+
@@ -1082,40 +1202,42 @@ function squadDetailHtml(curSquad){
     '<tr><td><strong>Issues Done (%)</strong></td>'+rowIss+'</tr>'+
     '<tr><td><strong>Cancelled SP</strong> <small>(fora do scope)</small></td>'+rowCanc+'</tr>'+
     '</tbody></table></div></div>';
-  // 🏁 Resumo da sprint encerrada (formato Sprint Review)
+  // Resumo da sprint encerrada (formato Sprint Review)
   if(d.review){
     const r=d.review, s=r.s;
     const sc=(s.scopeUnknown?null:s.scope), del=s.delivered, rate=sc?pct(del,sc):null;
-    const meta=rate==null?'—':(rate>=70?'✅ Atingida':(rate>=35?'⚠️ Parcial':'🔴 Não atingida'));
+    const meta=rate==null?'—':(rate>=70?'<span class="t-ok">'+ico('check',14)+' Atingida</span>'
+    :(rate>=35?'<span style="color:var(--amarelo)">'+ico('alert',14)+' Parcial</span>'
+             :'<span class="t-crit">'+ico('alert',14)+' Não atingida</span>'));
     const nextA=d.active;
     const recos=[];
     if(r.openSP>0) recos.push('Priorizar o fechamento do pipeline não concluído ('+fmtSP(r.openSP)+' SP em '+r.openN+' issues) antes de puxar escopo novo.');
     const qaSP=r.pipe.filter(([st])=>/qa|review/i.test(st)).reduce((x,[,v])=>x+v.sp,0);
     if(qaSP>=5) recos.push('QA/Code Review concentra '+fmtSP(qaSP)+' SP do que ficou aberto — considerar foco de QA no início da sprint.');
     if(nextA&&del>0&&nextA.badgeScope>del*1.3) recos.push('Scope da sprint atual ('+fmtSP(nextA.badgeScope)+' SP) está bem acima do entregue na sprint passada ('+fmtSP(del)+' SP) — revisar commitment.');
-    html+='<div class="panel"><h2>🏁 Resumo — '+esc(sprintLabel(s))+' (encerrada'+(s.end?' em '+ddmm(s.end):'')+')</h2>'+
+    html+='<div class="panel"><h2>'+ico('flag')+'Resumo — '+esc(sprintLabel(s))+' (encerrada'+(s.end?' em '+ddmm(s.end):'')+')</h2>'+
       '<p class="panel-sub">Formato Sprint Review. Gerado dos dados atuais do Jira — os status do que ficou aberto são os de HOJE (podem ter avançado desde a virada).</p>'+
       '<table><tbody>'+
       '<tr><th style="width:150px">Sprint Goal</th><td style="white-space:pre-line">'+esc((s.goal||'—'))+'</td></tr>'+
       '<tr><th>Visão geral</th><td>Scope <strong>'+(sc!=null?fmtSP(sc):'—')+' SP</strong> · Entregue <strong style="color:var(--verde)">'+fmtSP(del)+' SP</strong> '+(rate!=null?'<span class="pill '+(rate>=70?'green':(rate>=35?'yellow':'red'))+'">'+rate+'%</span>':'')+' · '+r.doneN+' issues concluídas · Meta: <strong>'+meta+'</strong></td></tr>'+
-      '<tr><th>✅ Conquistas</th><td>'+(r.wins.length?r.wins.map(([nm,g])=>'<div class="deliv">• <strong>'+esc(nm)+'</strong> — '+fmtSP(g.sp)+' SP · '+g.n+' issues entregues</div>').join(''):'—')+'</td></tr>'+
-      '<tr><th>🚧 Não concluído</th><td>'+(r.pipe.length?r.pipe.map(([st,v])=>'<span class="pill '+(/conclu|done/i.test(st)?'green':(/pend|block|reject|wait|qa|review/i.test(st)?'yellow':'blue'))+'" style="margin:2px 4px 2px 0">'+esc(st)+' · '+v.n+' · '+fmtSP(v.sp)+' SP</span>').join(' '):'Nada ficou aberto 🎉')+'<br><small style="color:var(--text-secondary)">'+r.openN+' issues · '+fmtSP(r.openSP)+' SP seguiram adiante</small></td></tr>'+
-      '<tr><th>🔄 Escopo</th><td>'+(r.cancN?r.cancN+' issue(s) canceladas ('+fmtSP(r.cancSP)+' SP, fora do scope) · ':'')+'Carryover: '+r.openN+' issues / '+fmtSP(r.openSP)+' SP</td></tr>'+
-      (recos.length?'<tr><th>🎯 Recomendações</th><td>'+recos.map(t=>'<div class="deliv">• '+t+'</div>').join('')+'</td></tr>':'')+
+      '<tr><th>'+ico('check',14)+' Conquistas</th><td>'+(r.wins.length?r.wins.map(([nm,g])=>'<div class="deliv">• <strong>'+esc(nm)+'</strong> — '+fmtSP(g.sp)+' SP · '+g.n+' issues entregues</div>').join(''):'—')+'</td></tr>'+
+      '<tr><th>'+ico('clock',14)+' Não concluído</th><td>'+(r.pipe.length?r.pipe.map(([st,v])=>'<span class="pill '+(/conclu|done/i.test(st)?'green':(/pend|block|reject|wait|qa|review/i.test(st)?'yellow':'blue'))+'" style="margin:2px 4px 2px 0">'+esc(st)+' · '+v.n+' · '+fmtSP(v.sp)+' SP</span>').join(' '):ico('check',14)+' Nada ficou aberto')+'<br><small style="color:var(--text-secondary)">'+r.openN+' issues · '+fmtSP(r.openSP)+' SP seguiram adiante</small></td></tr>'+
+      '<tr><th>'+ico('loop',14)+' Escopo</th><td>'+(r.cancN?r.cancN+' issue(s) canceladas ('+fmtSP(r.cancSP)+' SP, fora do scope) · ':'')+'Carryover: '+r.openN+' issues / '+fmtSP(r.openSP)+' SP</td></tr>'+
+      (recos.length?'<tr><th>'+ico('target',14)+' Recomendações</th><td>'+recos.map(t=>'<div class="deliv">• '+t+'</div>').join('')+'</td></tr>':'')+
       '</tbody></table></div>';
   }
   if(a && avgDelivered>0 && a.badgeScope>avgDelivered*1.3){
     const over=Math.round((a.badgeScope/avgDelivered-1)*100);
-    html+='<div class="alert-box"><h4>⚠️ '+esc(sprintLabel(a))+' — risco de overcommit</h4>'+
+    html+='<div class="alert-box"><h4>'+ico('alert',15)+esc(sprintLabel(a))+' — risco de overcommit</h4>'+
       '<p>Scope atual <strong>'+fmtSP(a.badgeScope)+' SP</strong> vs média entregue nas '+closed.length+' sprints fechadas: <strong>'+fmtSP(avgDelivered)+' SP</strong> → <strong>~'+over+'% acima</strong> da capacidade histórica.</p></div>';
   }
   // Carryover — herdado da sprint anterior
-  html+='<div class="panel"><h2>📦 Carryover — herdado da sprint anterior</h2>'+
+  html+='<div class="panel"><h2>'+ico('box')+'Carryover — herdado da sprint anterior</h2>'+
     '<p class="panel-sub">Issues (sem subtarefas, sem canceladas) presentes na sprint anterior E na seguinte — exatamente o que o “Complete Sprint” do Jira moveu adiante (o que voltou ao backlog não conta). <strong>≈ SP com estimativas ATUAIS</strong>: em transições entre sprints fechadas, re-estimativas posteriores podem inflar o valor vs. a foto da época (o Jira não preserva o SP nem o status da virada). Para a <strong>sprint ativa</strong>, o detalhamento mostra o status atual de cada issue herdada.</p>'+
     '<table><thead><tr><th>Transição</th><th>Issues herdadas</th><th>SP herdados</th><th>% do scope da sprint</th></tr></thead><tbody>'+
     list.slice(1).map((s,i)=>{
       const prev=list[i];
-      const lbl=sprintLabel(prev)+' → '+sprintLabel(s)+(s.state==='active'?' ⬅️':'');
+      const lbl=sprintLabel(prev)+' → '+sprintLabel(s)+(s.state==='active'?' <span class="t-now">atual</span>':'');
       if(s.carryNA||s.carryN==null) return '<tr><td>'+lbl+'</td><td>—</td><td>—</td><td>—</td></tr>';
       const sc=scopeOf(s);
       const p=sc?pct(s.carrySP,sc):null;
@@ -1148,7 +1270,7 @@ function squadDetailHtml(curSquad){
     const q=d.qa;
     const qaRowHtml=(q&&(q.n>0||q.histN>0||q.noSP>0))?(()=>{
       const p=q.sp>0?pct(q.dsp,q.sp):null;
-      return '<tr class="qa-row"><td class="col-name" style="font-weight:600">🧪 '+esc(shortName(q.name))+' <span class="pill purple">Story point QA</span></td>'+
+      return '<tr class="qa-row"><td class="col-name" style="font-weight:600">'+ico('flask',14)+' '+esc(shortName(q.name))+' <span class="pill purple">Story point QA</span></td>'+
         '<td>'+q.n+'</td><td>'+q.dn+'</td><td>'+fmtSP(q.sp)+'</td><td style="color:var(--verde);font-weight:600">'+fmtSP(q.dsp)+'</td>'+
         '<td>'+fmtSP(q.isp)+'</td><td>'+fmtSP(q.tsp)+'</td><td>'+(q.noSP||'0')+'</td>'+
         '<td>'+(p!==null?'<span class="pill '+(p>=60?'green':(p>=35?'yellow':'red'))+'">'+p+'%</span>':'—')+'</td>'+
@@ -1161,7 +1283,7 @@ function squadDetailHtml(curSquad){
     const reworkBig=rework.filter(r=>r.total>=2);
     const reworkSmall=rework.filter(r=>r.total<2);
     const reworkHtml=rework.length?(
-      '<div class="panel"><h2>🔁 Cards com retrabalho por rejeição'+(reworkBig.length?' <span class="pill red">'+reworkBig.length+' com 2+ rejeições</span>':'')+'</h2>'+
+      '<div class="panel"><h2>'+ico('loop')+'Cards com retrabalho por rejeição'+(reworkBig.length?' <span class="pill red">'+reworkBig.length+' com 2+ rejeições</span>':'')+'</h2>'+
       (reworkBig.length?'<div class="rework-grid">'+reworkBig.map(r=>
         '<div class="rework-card"><div class="rc-count">'+r.total+'x</div><div><div class="rc-title"><span class="rc-key">'+esc(r.key)+'</span> · <span class="rc-summary">'+esc((r.summary||'').slice(0,60))+'</span></div>'+
         '<div class="rc-meta">'+esc(r.assignee)+' · '+r.rejCode+' de código / '+r.rejQA+' de QA · agora em <span class="pill '+(/conclu|done/i.test(r.status||'')?'green':'yellow')+'">'+esc(r.status||'—')+'</span></div></div></div>'
@@ -1187,22 +1309,22 @@ function squadDetailHtml(curSquad){
       // Nesse caso o rótulo avisa, em vez de premiar a squad por um dado que não existe.
       const b=noEvents?{l:'SEM EVENTOS',c:'var(--turquesa)'}:retBand(v);
       if(noEvents) reading='Nenhum "'+statusName+'" registrado no histórico da squad — confirme se o time usa esse status';
-      return '<div class="kpi-card" style="border-left:3px solid '+b.c+'">'+
+      return '<div class="kpi-card" style="box-shadow:1px 0 0 var(--border),inset 3px 0 0 '+b.c+';padding-left:var(--sp-25)">'+
         '<div class="label">'+title+'</div>'+
         '<div class="value" style="color:'+b.c+'">'+fmtIdx(v)+'</div>'+
         '<div class="delta"><span class="pill" style="background:'+b.c+'26;color:'+b.c+'">'+b.l+'</span></div>'+
         '<div class="delta">'+rej+' '+(rej===1?'retorno':'retornos')+' ÷ '+base+' card'+(base===1?'':'s')+' '+hint+' · '+affected+' card'+(affected===1?'':'s')+' afetado'+(affected===1?'':'s')+'</div>'+
         (reading?'<div class="delta" style="color:var(--text-disabled)">'+reading+'</div>':'')+
         '<div class="sbar" style="margin-top:8px"><div style="background:var(--verde);width:16.6%"></div><div style="background:var(--amarelo);width:16.7%"></div><div style="background:var(--laranja);width:33.4%"></div><div style="background:var(--magenta-text);width:33.3%"></div></div>'+
-        '<div style="position:relative;height:var(--sp-15);font-size:var(--fs-label)"><span style="position:absolute;left:'+Math.min(100,Math.max(0,(v||0)/1.5*100))+'%;transform:translateX(-50%);font-weight:800;color:'+b.c+'">▲</span></div>'+
+        '<div style="position:relative;height:var(--sp-15);font-size:var(--fs-label)"><span style="position:absolute;left:'+Math.min(100,Math.max(0,(v||0)/1.5*100))+'%;transform:translateX(-50%);font-weight:800;color:'+b.c+';width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-bottom:5px solid '+b.c+'"></span></div>'+
         retSpark(pick)+
       '</div>';};
     const maxIrq=Math.max(0.01,...R.hist.map(h=>h.irq||0));
     const sparks=R.hist.map(h=>{const b=retBand(h.irq);
       return '<div style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:4px">'+
         '<div style="width:100%;height:'+Math.max(3,(h.irq||0)/maxIrq*54)+'px;background:'+b.c+';border-radius:var(--r-sm) var(--r-sm) 0 0" title="'+esc(h.name)+' — retorno QA '+fmtIdx(h.irq)+' ('+h.rejQA+' ÷ '+h.baseQA+')"></div>'+
-        '<div style="font-size:var(--fs-label);color:var(--text-secondary);text-align:center;line-height:1.25">'+esc(h.name.replace(/^Sprint\s+/,'S'))+(h.state==='active'?' ⬅️':'')+'<br><strong style="color:'+b.c+'">'+fmtIdx(h.irq)+'</strong></div></div>';}).join('');
-    html+='<div class="panel"><h2>🎯 Índice de retorno — retrabalho médio por card <span class="pill blue">'+esc(sprintLabel(a))+'</span></h2>'+
+        '<div style="font-size:var(--fs-label);color:var(--text-secondary);text-align:center;line-height:1.25">'+esc(h.name.replace(/^Sprint\s+/,'S'))+(h.state==='active'?' <span class="t-now">atual</span>':'')+'<br><strong style="color:'+b.c+'">'+fmtIdx(h.irq)+'</strong></div></div>';}).join('');
+    html+='<div class="panel"><h2>'+ico('target')+'Índice de retorno — retrabalho médio por card <span class="pill blue">'+esc(sprintLabel(a))+'</span></h2>'+
       '<p class="panel-sub">Quantas vezes, em média, um card volta antes de passar — <strong>0 é ótimo</strong>. Base = cards que efetivamente chegaram ao estágio (changelog do Jira). Alimenta a re-estimativa: <strong>estimativa ajustada = estimativa prévia × (1 + índice)</strong>.</p>'+
       '<div class="kpi-grid">'+
         retTile('↩︎ Retorno QA (IRQ)',rc.irq,rc.rejQA,rc.baseQA,'que chegaram ao QA',rc.cardsQA||0,'irq',
@@ -1211,7 +1333,7 @@ function squadDetailHtml(curSquad){
         retTile('↩︎ Retorno de código (IRC)',rc.irc,rc.rejCode,rc.baseCR,'que entraram em code review',rc.cardsCR||0,'irc',
           rc.irc?('1 em cada '+Math.round(1/rc.irc)+' PRs volta'):(rc.irc===0?'Nenhum PR voltou nesta sprint':''),
           (R.all.rejCode||0)===0,'CODE REVIEW REJECTED')+
-        '<div class="kpi-card" style="border-left:3px solid var(--turquesa)">'+
+        '<div class="kpi-card info">'+
           '<div class="label">Fator de re-estimativa</div>'+
           '<div class="value" style="font-size:var(--fs-h3)">QA '+retFactor(rc.irq)+' <span class="t-dim" style="font-size:var(--fs-h4)">/</span> Dev '+retFactor(rc.irc)+'</div>'+
           '<div class="delta">Sprint atual. Histórico (todas as sprints): <strong>QA '+retFactor(R.all.irq)+' · Dev '+retFactor(R.all.irc)+'</strong></div>'+
@@ -1224,7 +1346,7 @@ function squadDetailHtml(curSquad){
         '<span><i style="display:inline-block;width:var(--sp-1);height:var(--sp-1);border-radius:var(--r-sm);background:var(--laranja);margin-right:var(--sp-05)"></i><b>≤0,50</b> atenção</span>'+
         '<span><i style="display:inline-block;width:var(--sp-1);height:var(--sp-1);border-radius:var(--r-sm);background:var(--magenta-text);margin-right:var(--sp-05)"></i><b>≤1,00</b> ruim · <b>&gt;1,00</b> crítico</span>'+
       '</div>'+
-      '<h4 style="margin:var(--sp-1) 0;font-size:var(--fs-sm)">📈 Evolução e média histórica — todas as sprints da squad</h4>'+
+      '<h4 style="margin:var(--sp-1) 0;font-size:var(--fs-sm)">'+ico('trend',14)+' Evolução e média histórica — todas as sprints da squad</h4>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;align-items:start">'+
         '<div class="kpi-grid" style="margin:0">'+
           '<div class="kpi-card"><div class="label">Retorno QA — média geral</div><div class="value" style="color:'+retBand(R.all.irq).c+'">'+fmtIdx(R.all.irq)+'</div><div class="delta">'+R.all.rejQA+' retornos ÷ '+R.all.baseQA+' cards testados · '+R.all.sprints+' sprints</div></div>'+
@@ -1235,16 +1357,16 @@ function squadDetailHtml(curSquad){
       '<p style="font-size:11px;color:var(--text-disabled);margin:10px 0 0">Média geral = ponderada por card (todos os cards de todas as sprints da squad), não média de médias — não distorce sprints pequenas. <strong>Escopo do índice:</strong> apenas cards (história/tarefa/bug) que pertencem a alguma sprint do board — <strong>subtarefas e cards sem sprint ficam fora</strong>, porque o índice é medido por sprint e na granularidade de card. Validado em 27/07/2026 contra o Jira (<code>status WAS "REJECTED BY QA"</code>): AE 2/2 e OE 19/19 conferem; na EE, 6 cards que passaram por rejeição estão fora do escopo (sem sprint ou subtarefa).</p>'+
       '</div>';
     html+=reworkHtml;
-    html+='<div class="panel"><h2>👤 Desempenho por Dev/QA — '+esc(sprintLabel(a))+'</h2>'+
-      '<p class="panel-sub"><strong>DEV</strong> = SP das <strong>subtarefas</strong> (é onde o trabalho de desenvolvimento está alocado — cada subtarefa com seu próprio responsável e status; a soma das subtarefas = a porção dev da história). Histórias <strong>sem subtarefa</strong> usam a porção dev do próprio card (<em>Story Points total − Story point QA</em>). Subtarefas canceladas são excluídas. A linha <strong>🧪 QA</strong> usa o campo <strong>Story point QA</strong> das histórias/tarefas/bugs (atribuído ao QA quando a issue entra nos status de QA; entregue só em DONE). <strong>Mesma regra de busca e exibição nas 3 squads.</strong></p>'+
+    html+='<div class="panel"><h2>'+ico('user')+'Desempenho por Dev/QA — '+esc(sprintLabel(a))+'</h2>'+
+      '<p class="panel-sub"><strong>DEV</strong> = SP das <strong>subtarefas</strong> (é onde o trabalho de desenvolvimento está alocado — cada subtarefa com seu próprio responsável e status; a soma das subtarefas = a porção dev da história). Histórias <strong>sem subtarefa</strong> usam a porção dev do próprio card (<em>Story Points total − Story point QA</em>). Subtarefas canceladas são excluídas. A linha <strong>QA</strong> usa o campo <strong>Story point QA</strong> das histórias/tarefas/bugs (atribuído ao QA quando a issue entra nos status de QA; entregue só em DONE). <strong>Mesma regra de busca e exibição nas 3 squads.</strong></p>'+
       '<div class="table-scroll"><table class="devqa"><thead><tr><th>Dev / QA</th><th>Itens atrib.</th><th>Itens concl.</th><th>SP atribuídos</th><th>SP entregues</th><th>SP em andamento</th><th>SP não iniciados</th><th>Sem SP</th><th>% SP entregue</th><th>↩︎ Ret. QA</th><th>↩︎ Ret. código</th></tr></thead><tbody>'+rowsD+
       '<tr class="total-row"><td class="col-name">TOTAL devs (subtarefas)</td><td>'+totD.n+'</td><td>'+totD.dn+'</td><td>'+fmtSP(totD.sp)+'</td><td>'+fmtSP(totD.dsp)+'</td><td>'+fmtSP(totD.isp)+'</td><td>'+fmtSP(totD.tsp)+'</td><td>'+totD.noSP+'</td>'+
       '<td>'+(totD.sp>0?pct(totD.dsp,totD.sp)+'%':'—')+'</td>'+
       '<td>'+retPill((d.ret&&d.ret.cur)?d.ret.cur.irq:null)+'</td><td>'+retPill((d.ret&&d.ret.cur)?d.ret.cur.irc:null)+'</td></tr>'+
       qaRowHtml+
       '</tbody></table></div>'+
-      '<p style="font-size:11px;color:var(--text-disabled);margin:8px 0 0"><strong>↩︎ Ret. QA / Ret. código</strong> = retornos ÷ cards da pessoa que chegaram a cada estágio (0 é ótimo). Na linha 🧪 QA aparece a média da squad — o retrabalho que o QA absorve.</p>'+
-      (qaRowHtml?'<p style="font-size:11px;color:var(--text-disabled);margin:8px 0 0">🧪 QA é linha complementar (não soma no TOTAL devs). <strong>DEV</strong> = pontos alocados nas <strong>subtarefas</strong> (trabalho de desenvolvimento); <strong>QA</strong> = <strong>Story point QA</strong> das histórias, contabilizado quando a issue entra no fluxo de QA. São partes do mesmo Story Points (total = DEV + QA), medidas na granularidade real de cada uma — por isso podem não fechar exatamente com o escopo do card (subtarefas têm estimativa própria e o QA só entra ao chegar no fluxo de QA).</p>':'')+
+      '<p style="font-size:11px;color:var(--text-disabled);margin:8px 0 0"><strong>↩︎ Ret. QA / Ret. código</strong> = retornos ÷ cards da pessoa que chegaram a cada estágio (0 é ótimo). Na linha de QA aparece a média da squad — o retrabalho que o QA absorve.</p>'+
+      (qaRowHtml?'<p style="font-size:11px;color:var(--text-disabled);margin:8px 0 0">'+ico('flask',13)+' A linha de QA é complementar (não soma no TOTAL devs). <strong>DEV</strong> = pontos alocados nas <strong>subtarefas</strong> (trabalho de desenvolvimento); <strong>QA</strong> = <strong>Story point QA</strong> das histórias, contabilizado quando a issue entra no fluxo de QA. São partes do mesmo Story Points (total = DEV + QA), medidas na granularidade real de cada uma — por isso podem não fechar exatamente com o escopo do card (subtarefas têm estimativa própria e o QA só entra ao chegar no fluxo de QA).</p>':'')+
       '</div>';
     // Matriz Dev/QA × Sprint: entregas (e alocação) por sprint + média final
     const realS=list.filter(s=>!String(s.id).startsWith('bl-'));
@@ -1255,12 +1377,12 @@ function squadDetailHtml(curSquad){
         '<br><small style="color:var(--text-secondary)">aloc. '+fmtSP(b.aSP)+' SP · '+b.aN+'</small></td>';
     };
     const avgCell=v=>'<td style="white-space:nowrap;background:rgba(78,203,113,.06)"><strong>'+fmtSP(Math.round(v.avgSP*100)/100)+' SP</strong> · '+(Math.round(v.avgN*10)/10)+' tarefas<br><small style="color:var(--text-secondary)">'+v.partN+' sprint(s) fechada(s)</small></td>';
-    html+='<div class="panel"><h2>📊 Entregas por Dev/QA × Sprint</h2>'+
-      '<p class="panel-sub">Por sprint: <strong style="color:var(--verde)">entregue</strong> (SP · tarefas, atribuído à sprint em que a issue foi concluída) e, abaixo, o alocado. Devs em SP totais (Story Points = DEV + QA); linha 🧪 QA em <strong>Story point QA</strong> — atribuída ao QA quando a issue entra nos status de QA, entregue só quando chega a DONE. <strong>Média final</strong> = entregue ÷ '+closedCnt+' sprints fechadas em que participou — recalcula ao vivo quando cada sprint encerra (a atual entra ao fechar).</p>'+
-      '<div class="table-scroll" data-scroll-end="1"><table class="wide-sprints"><thead><tr><th>Dev / QA</th>'+realS.map(s=>'<th>'+esc(sprintLabel(s))+(s.state==='active'?' ⬅️ atual':'')+'</th>').join('')+'<th>Média final /sprint</th></tr></thead><tbody>'+
+    html+='<div class="panel"><h2>'+ico('bars')+'Entregas por Dev/QA × Sprint</h2>'+
+      '<p class="panel-sub">Por sprint: <strong style="color:var(--verde)">entregue</strong> (SP · tarefas, atribuído à sprint em que a issue foi concluída) e, abaixo, o alocado. Devs em SP totais (Story Points = DEV + QA); linha de QA em <strong>Story point QA</strong> — atribuída ao QA quando a issue entra nos status de QA, entregue só quando chega a DONE. <strong>Média final</strong> = entregue ÷ '+closedCnt+' sprints fechadas em que participou — recalcula ao vivo quando cada sprint encerra (a atual entra ao fechar).</p>'+
+      '<div class="table-scroll" data-scroll-end="1"><table class="wide-sprints"><thead><tr><th>Dev / QA</th>'+realS.map(s=>'<th>'+esc(sprintLabel(s))+(s.state==='active'?' <span class="t-now">atual</span>':'')+'</th>').join('')+'<th>Média final /sprint</th></tr></thead><tbody>'+
       d.devs.map(v=>'<tr><td title="'+esc(v.name)+'"'+(v.name==='Sem responsável'?' style="color:var(--text-disabled);font-style:italic"':' style="font-weight:600"')+'>'+esc(shortName(v.name))+'</td>'+
         realS.map(s=>cellD(v,s)).join('')+avgCell(v)+'</tr>').join('')+
-      ((q&&(q.n>0||q.histN>0))?('<tr class="qa-row"><td style="font-weight:600">🧪 '+esc(shortName(q.name))+' <span class="pill purple">Story point QA</span></td>'+realS.map(s=>cellD(q,s)).join('')+avgCell(q)+'</tr>'):'')+
+      ((q&&(q.n>0||q.histN>0))?('<tr class="qa-row"><td style="font-weight:600">'+ico('flask',14)+' '+esc(shortName(q.name))+' <span class="pill purple">Story point QA</span></td>'+realS.map(s=>cellD(q,s)).join('')+avgCell(q)+'</tr>'):'')+
       '</tbody></table></div>'+
       // Sprints que só existem como BASELINE oficial (não estão mais nos campos atuais do Jira)
       // não têm quebra por dev — explicitamos em vez de deixar a coluna sumir sem explicação.
@@ -1273,7 +1395,7 @@ function squadDetailHtml(curSquad){
       '</div>';
   }
   // canvas com id por squad (map_vel_AE, map_vel_EE…) porque agora as 4 squads convivem na página
-  html+='<div class="panel"><h2>Velocity — Scope vs Delivered</h2><div class="chart-holder"><canvas id="map_vel_'+curSquad+'"></canvas></div></div>';
+  html+='<div class="panel"><h2>'+ico('bars')+'Velocity — Scope vs Delivered</h2><div class="chart-holder"><canvas id="map_vel_'+curSquad+'"></canvas></div></div>';
   return html;
 }
 // Gráfico de Velocity de uma squad (chamado depois do HTML entrar no DOM)
@@ -1301,30 +1423,32 @@ async function boot(){
     loading.classList.add('hidden');
     const anyA=SQUADS.map(s=>DATA[s.code].active).find(Boolean);
     const gen=window.__GEN__?new Date(window.__GEN__).toLocaleString('pt-BR'):'—';
-    const liveTxt=window.__LIVE__?'⚡ tempo real (consultado agora)':'último snapshot ('+gen+')';
-    document.getElementById('subtitle').textContent=(anyA?sprintLabel(anyA)+' · Day '+anyA.day+' of '+WORKDAYS+' · ':'')+'Dados do Jira: '+liveTxt;
+    document.getElementById('subtitle').textContent=anyA?sprintLabel(anyA)+' · Day '+anyA.day+' of '+WORKDAYS:'Dados do Jira';
     document.getElementById('ctaStatus').innerHTML=window.__LIVE__
-      ?'⚡ Consultado ao vivo agora às '+new Date(window.__GEN__).toLocaleTimeString('pt-BR')
+      ?ico('bolt',13)+' Consultado ao vivo agora às '+new Date(window.__GEN__).toLocaleTimeString('pt-BR')
       :(LIVE_ENDPOINT
-        ?'⚠️ Proxy indisponível — mostrando o último snapshot de '+gen+' · <a href="'+ACTIONS_URL+'" target="_blank">ver execuções</a>'
-        :'Mostrando o último snapshot publicado ('+gen+') · <a href="'+ACTIONS_URL+'" target="_blank">ver execuções</a>');
-    document.getElementById('footer').innerHTML='<strong>Método (precisão):</strong> JQL <code>project = X AND sprint is not EMPTY AND issuetype NOT IN subtaskIssueTypes()</code> · SP = campo <strong>Story Points</strong> (customfield_10028), que <strong>já é a somatória DEV + QA</strong> da história/tarefa/bug (validado: Story Points = Story point total (dev, cf 10548) + Story point QA (cf 10546)), somados por status category, sem subtarefas nas 4 squads. <strong>Testamos usar o endpoint “oficial” de relatório de sprint do Jira como fonte única e revertemos</strong>: ele usa uma foto desatualizada dos pontos (mesma fonte do Burndown nativo) e chegou a mostrar a AE com 1,25 SP concluído quando o real era 64+ — por isso o cálculo ao vivo via JQL abaixo continua sendo a fonte da verdade (já bate com o widget “Progresso do sprint” do Jira). Linha 🧪 QA do Desempenho por Dev/QA: campo <strong>Story point QA</strong> — a issue é atribuída ao QA quando entra nos status de QA (PENDING QA = não iniciado; ON TESTING/ON GOING QA · QA VERIFIED/APPROVED BY QA · QA DENIED/REJECTED BY QA = em andamento); entregue só em DONE; issues em dev não contam para o QA. <strong>Issues em statuses CANCEL (categoria “done” no Jira) são excluídas do scope e nunca contam como entrega</strong>. Sprints <strong>fechadas</strong> usam baselines oficiais dos reports validados (badges lidos na época); valores sem baseline aparecem com “≈” (reconstruídos). Boards: AE 479 · EE 475 · INF 476 · OE 474. O botão <strong>⟳</strong> (atualizar dados, no topo) consulta o Jira agora mesmo em tempo real (proxy serverless, sem exigir login de quem acessa); se o proxy não estiver configurado, mostra o último snapshot gerado pelo workflow Update data (fallback horário).';
+        ?ico('alert',13)+' Proxy indisponível — último snapshot '+gen+' · <a href="'+ACTIONS_URL+'" target="_blank">ver execuções</a>'
+        :'Último snapshot '+gen+' · <a href="'+ACTIONS_URL+'" target="_blank">ver execuções</a>');
+    document.getElementById('footer').innerHTML='<strong>Método (precisão):</strong> JQL <code>project = X AND sprint is not EMPTY AND issuetype NOT IN subtaskIssueTypes()</code> · SP = campo <strong>Story Points</strong> (customfield_10028), que <strong>já é a somatória DEV + QA</strong> da história/tarefa/bug (validado: Story Points = Story point total (dev, cf 10548) + Story point QA (cf 10546)), somados por status category, sem subtarefas nas 4 squads. <strong>Testamos usar o endpoint “oficial” de relatório de sprint do Jira como fonte única e revertemos</strong>: ele usa uma foto desatualizada dos pontos (mesma fonte do Burndown nativo) e chegou a mostrar a AE com 1,25 SP concluído quando o real era 64+ — por isso o cálculo ao vivo via JQL abaixo continua sendo a fonte da verdade (já bate com o widget “Progresso do sprint” do Jira). Linha QA do Desempenho por Dev/QA: campo <strong>Story point QA</strong> — a issue é atribuída ao QA quando entra nos status de QA (PENDING QA = não iniciado; ON TESTING/ON GOING QA · QA VERIFIED/APPROVED BY QA · QA DENIED/REJECTED BY QA = em andamento); entregue só em DONE; issues em dev não contam para o QA. <strong>Issues em statuses CANCEL (categoria “done” no Jira) são excluídas do scope e nunca contam como entrega</strong>. Sprints <strong>fechadas</strong> usam baselines oficiais dos reports validados (badges lidos na época); valores sem baseline aparecem com “≈” (reconstruídos). Boards: AE 479 · EE 475 · INF 476 · OE 474. O botão <strong>Atualizar</strong> (no topo) consulta o Jira agora mesmo em tempo real (proxy serverless, sem exigir login de quem acessa); se o proxy não estiver configurado, mostra o último snapshot gerado pelo workflow Update data (fallback horário).';
     renderAll();
   }catch(e){
     console.error('[weekly-hub] load error',e);
     loading.classList.add('hidden');
     eb.classList.remove('hidden');
-    eb.textContent='Erro ao carregar dados: '+(e.message||e)+' — clique em ⟳ (atualizar dados, no topo) para tentar novamente.';
+    eb.textContent='Erro ao carregar dados: '+(e.message||e)+' — clique em Atualizar (no topo) para tentar novamente.';
   }finally{
     document.getElementById('btnRefresh').disabled=false;
   }
 }
-/* ---------- ⟳ Atualizar dados (botão só-ícone no topo) ----------
+/* ---------- Atualizar dados (botão do topo) ----------
    Cada clique chama boot(), que tenta primeiro o proxy serverless (LIVE_ENDPOINT — Cloudflare
    Worker com o token do Jira guardado como Secret, nunca exposto ao navegador) para uma consulta
    em tempo real, e só se ele não responder cai para o último data.json publicado pelo GitHub
    Actions. Sem login, sem token, sem prompt para quem acessa o site. */
 const ACTIONS_URL='https://github.com/Lousada-Shippify/shippify-weekly-squads-team/actions/workflows/update-data.yml';
+// Ícones em linha dos controles fixos do topo (o do tema é redesenhado por applyTheme)
+document.getElementById('icoRefresh').innerHTML=ico('refresh',15);
+document.getElementById('icoTop').innerHTML=ico('up',15);
 initTheme();
 trackStickyHeight();
 initTopLink();
