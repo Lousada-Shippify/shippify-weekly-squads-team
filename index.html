@@ -96,17 +96,26 @@
   .wrap{max-width:1180px;margin:0 auto;padding:var(--sp-3) var(--sp-3) var(--sp-8)}
   /* Logotipo horizontal oficial — troca de variante conforme o tema (nunca recolorido).
      DS: altura mínima 32px, área livre ao redor, sem sombra/rotação/distorção. */
-  .brand{display:flex;align-items:center;gap:var(--sp-15);margin-bottom:var(--sp-1)}
+  /* Lockup do topo: logo | filete | título+subtítulo, no lugar onde antes ficava o rótulo
+     "Product Ops". O título entra em escala reduzida (h3) para não competir com o logotipo,
+     e o filete estica na altura do bloco de texto — os três lêem como uma peça só. */
+  .brand{display:flex;align-items:center;gap:var(--sp-2);min-width:0}
   .brand-logo{width:200px;height:34px;background:var(--logo) left center/contain no-repeat;flex:none}
-  .brand-sep{width:1px;height:var(--sp-3);background:var(--border);flex:none}
+  .brand-sep{width:1px;align-self:stretch;background:var(--border);flex:none}
+  .brand-title{min-width:0}
   header.top{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:var(--sp-2);margin-bottom:var(--sp-2)}
-  h1{font-weight:800;font-size:var(--fs-h1);margin:0 0 var(--sp-05)}
-  .subtitle{font-family:var(--font-body);color:var(--text-secondary);font-size:var(--fs-sm);margin:0}
+  h1{font-weight:800;font-size:var(--fs-h3);line-height:1.2;margin:0}
+  .subtitle{font-family:var(--font-body);color:var(--text-secondary);font-size:var(--fs-cap);margin:var(--sp-05) 0 0}
   .cta{display:flex;flex-direction:column;align-items:flex-end;gap:var(--sp-1)}
-  .btn-refresh{border:none;background:var(--turquesa);color:var(--turquesa-ink);padding:var(--sp-15) var(--sp-25);border-radius:var(--r-md);font-family:var(--font-display);font-size:var(--fs-sm);font-weight:700;cursor:pointer;transition:filter .15s}
-  .btn-refresh:hover{filter:brightness(1.08)}
-  .btn-refresh:focus-visible{outline:2px solid var(--text-primary);outline-offset:2px}
-  .btn-refresh:disabled{opacity:.55;cursor:default}
+  /* Ações do topo — só glifo, discretas (04/08/2026). Contorno leve; a cor só aparece no hover. */
+  .cta-actions{display:flex;align-items:center;gap:var(--sp-1)}
+  .btn-icon{width:32px;height:32px;flex:none;display:inline-flex;align-items:center;justify-content:center;
+    border:1px solid var(--border);background:transparent;color:var(--text-secondary);
+    border-radius:var(--r-md);font-family:var(--font-display);font-size:16px;line-height:1;cursor:pointer;
+    transition:color var(--dur-fast) var(--ease-out),border-color var(--dur-fast) var(--ease-out),background var(--dur-fast) var(--ease-out)}
+  .btn-icon:hover{color:var(--text-primary);border-color:var(--text-disabled);background:var(--bg-card)}
+  .btn-icon:focus-visible{outline:2px solid var(--turquesa);outline-offset:2px}
+  .btn-icon:disabled{opacity:.4;cursor:default}
   .cta-status{font-family:var(--font-body);font-size:var(--fs-cap);color:var(--text-secondary);max-width:340px;text-align:right}
   .cta-status a{color:var(--turquesa);font-weight:600}
   /* Header fixo da página única (28/07/2026): título + botões de squad sempre visíveis */
@@ -115,13 +124,6 @@
   .squad-nav{display:flex;align-items:center;gap:var(--sp-15);flex-wrap:wrap;padding:0 0 var(--sp-1)}
   .squad-nav-top{font-family:var(--font-display);font-size:var(--fs-label);font-weight:600;color:var(--text-disabled);text-decoration:none;white-space:nowrap}
   .squad-nav-top:hover{color:var(--text-secondary)}
-  /* Alternador de tema — claro/escuro (04/08/2026). Abre seguindo o sistema operacional. */
-  .btn-theme{border:1px solid var(--border);background:var(--bg-card);color:var(--text-secondary);
-    padding:var(--sp-1) var(--sp-15);border-radius:var(--r-md);font-family:var(--font-display);
-    font-size:var(--fs-label);font-weight:600;letter-spacing:.07em;text-transform:uppercase;
-    cursor:pointer;white-space:nowrap;transition:color var(--dur-fast) var(--ease-out),border-color var(--dur-fast) var(--ease-out)}
-  .btn-theme:hover{color:var(--text-primary);border-color:var(--text-disabled)}
-  .btn-theme:focus-visible{outline:2px solid var(--turquesa);outline-offset:2px}
   .squad-nav .squad-tabs{margin-bottom:0}
   /* Seções por squad: âncora de scroll com respiro pro header fixo não cobrir o título */
   .squad-section{scroll-margin-top:152px;padding-top:var(--sp-05);margin-bottom:var(--sp-15)}
@@ -240,24 +242,25 @@
   <!-- Header FIXO: título, status, atualizar e os botões de squad que rolam até a seção -->
   <div class="sticky-top">
     <header class="top">
-      <div>
-        <div class="brand">
-          <span class="brand-logo" role="img" aria-label="Shippify"></span>
-          <span class="brand-sep" aria-hidden="true"></span>
-          <span class="t-sec" style="font-size:var(--fs-label);letter-spacing:.07em;text-transform:uppercase">Product Ops</span>
+      <div class="brand">
+        <span class="brand-logo" role="img" aria-label="Shippify"></span>
+        <span class="brand-sep" aria-hidden="true"></span>
+        <div class="brand-title">
+          <h1>Weekly Product — Engineering Squads</h1>
+          <p class="subtitle" id="subtitle">Carregando dados do Jira…</p>
         </div>
-        <h1>Weekly Product — Engineering Squads</h1>
-        <p class="subtitle" id="subtitle">Carregando dados do Jira…</p>
       </div>
       <div class="cta">
-        <button class="btn-refresh" id="btnRefresh" disabled title="Consulta o Jira agora mesmo (tempo real via proxy) — sem exigir login de quem acessa">🔄 Atualizar dados</button>
+        <div class="cta-actions">
+          <button class="btn-icon" id="btnRefresh" disabled aria-label="Atualizar dados" title="Atualizar dados — consulta o Jira agora mesmo (tempo real via proxy), sem exigir login de quem acessa"><span aria-hidden="true">⟳</span></button>
+          <button class="btn-icon" id="btnTheme" type="button" title="Alternar entre tema claro e escuro"><span aria-hidden="true">☾</span></button>
+        </div>
         <div class="cta-status" id="ctaStatus">Carregando…</div>
       </div>
     </header>
     <nav class="squad-nav">
       <a class="squad-nav-top" href="#resumo-overview" title="Voltar aos resumos do topo">▲ Resumos</a>
       <div class="squad-tabs" id="squadNav"></div>
-      <button class="btn-theme" id="btnTheme" type="button" title="Alternar entre tema claro e escuro">☾ Escuro</button>
     </nav>
   </div>
 
@@ -401,9 +404,11 @@ function systemTheme(){ try{ return matchMedia('(prefers-color-scheme: light)').
 function applyTheme(t,redraw){
   document.documentElement.setAttribute('data-theme',t);
   const b=document.getElementById('btnTheme');
-  if(b){ // o botão mostra o tema ATIVO; o clique leva ao outro
-    b.textContent = t==='light' ? '☀ Claro' : '☾ Escuro';
-    b.setAttribute('aria-label', t==='light' ? 'Tema claro ativo — clique para escuro' : 'Tema escuro ativo — clique para claro');
+  if(b){ // só o glifo do tema ATIVO; o clique leva ao outro (o texto vive no aria-label/title)
+    b.innerHTML = '<span aria-hidden="true">'+(t==='light'?'☀':'☾')+'</span>';
+    const lbl = t==='light' ? 'Tema claro ativo — clique para escuro' : 'Tema escuro ativo — clique para claro';
+    b.setAttribute('aria-label', lbl);
+    b.setAttribute('title', lbl);
   }
   if(redraw && typeof DATA!=='undefined' && DATA) renderAll();
 }
@@ -1244,18 +1249,18 @@ async function boot(){
       :(LIVE_ENDPOINT
         ?'⚠️ Proxy indisponível — mostrando o último snapshot de '+gen+' · <a href="'+ACTIONS_URL+'" target="_blank">ver execuções</a>'
         :'Mostrando o último snapshot publicado ('+gen+') · <a href="'+ACTIONS_URL+'" target="_blank">ver execuções</a>');
-    document.getElementById('footer').innerHTML='<strong>Método (precisão):</strong> JQL <code>project = X AND sprint is not EMPTY AND issuetype NOT IN subtaskIssueTypes()</code> · SP = campo <strong>Story Points</strong> (customfield_10028), que <strong>já é a somatória DEV + QA</strong> da história/tarefa/bug (validado: Story Points = Story point total (dev, cf 10548) + Story point QA (cf 10546)), somados por status category, sem subtarefas nas 4 squads. <strong>Testamos usar o endpoint “oficial” de relatório de sprint do Jira como fonte única e revertemos</strong>: ele usa uma foto desatualizada dos pontos (mesma fonte do Burndown nativo) e chegou a mostrar a AE com 1,25 SP concluído quando o real era 64+ — por isso o cálculo ao vivo via JQL abaixo continua sendo a fonte da verdade (já bate com o widget “Progresso do sprint” do Jira). Linha 🧪 QA do Desempenho por Dev/QA: campo <strong>Story point QA</strong> — a issue é atribuída ao QA quando entra nos status de QA (PENDING QA = não iniciado; ON TESTING/ON GOING QA · QA VERIFIED/APPROVED BY QA · QA DENIED/REJECTED BY QA = em andamento); entregue só em DONE; issues em dev não contam para o QA. <strong>Issues em statuses CANCEL (categoria “done” no Jira) são excluídas do scope e nunca contam como entrega</strong>. Sprints <strong>fechadas</strong> usam baselines oficiais dos reports validados (badges lidos na época); valores sem baseline aparecem com “≈” (reconstruídos). Boards: AE 479 · EE 475 · INF 476 · OE 474. <strong>🔄 Atualizar dados</strong> consulta o Jira agora mesmo em tempo real (proxy serverless, sem exigir login de quem acessa); se o proxy não estiver configurado, mostra o último snapshot gerado pelo workflow Update data (fallback horário).';
+    document.getElementById('footer').innerHTML='<strong>Método (precisão):</strong> JQL <code>project = X AND sprint is not EMPTY AND issuetype NOT IN subtaskIssueTypes()</code> · SP = campo <strong>Story Points</strong> (customfield_10028), que <strong>já é a somatória DEV + QA</strong> da história/tarefa/bug (validado: Story Points = Story point total (dev, cf 10548) + Story point QA (cf 10546)), somados por status category, sem subtarefas nas 4 squads. <strong>Testamos usar o endpoint “oficial” de relatório de sprint do Jira como fonte única e revertemos</strong>: ele usa uma foto desatualizada dos pontos (mesma fonte do Burndown nativo) e chegou a mostrar a AE com 1,25 SP concluído quando o real era 64+ — por isso o cálculo ao vivo via JQL abaixo continua sendo a fonte da verdade (já bate com o widget “Progresso do sprint” do Jira). Linha 🧪 QA do Desempenho por Dev/QA: campo <strong>Story point QA</strong> — a issue é atribuída ao QA quando entra nos status de QA (PENDING QA = não iniciado; ON TESTING/ON GOING QA · QA VERIFIED/APPROVED BY QA · QA DENIED/REJECTED BY QA = em andamento); entregue só em DONE; issues em dev não contam para o QA. <strong>Issues em statuses CANCEL (categoria “done” no Jira) são excluídas do scope e nunca contam como entrega</strong>. Sprints <strong>fechadas</strong> usam baselines oficiais dos reports validados (badges lidos na época); valores sem baseline aparecem com “≈” (reconstruídos). Boards: AE 479 · EE 475 · INF 476 · OE 474. O botão <strong>⟳</strong> (atualizar dados, no topo) consulta o Jira agora mesmo em tempo real (proxy serverless, sem exigir login de quem acessa); se o proxy não estiver configurado, mostra o último snapshot gerado pelo workflow Update data (fallback horário).';
     renderAll();
   }catch(e){
     console.error('[weekly-hub] load error',e);
     loading.classList.add('hidden');
     eb.classList.remove('hidden');
-    eb.textContent='Erro ao carregar dados: '+(e.message||e)+' — clique em 🔄 Atualizar dados para tentar novamente.';
+    eb.textContent='Erro ao carregar dados: '+(e.message||e)+' — clique em ⟳ (atualizar dados, no topo) para tentar novamente.';
   }finally{
     document.getElementById('btnRefresh').disabled=false;
   }
 }
-/* ---------- 🔄 Atualizar dados ----------
+/* ---------- ⟳ Atualizar dados (botão só-ícone no topo) ----------
    Cada clique chama boot(), que tenta primeiro o proxy serverless (LIVE_ENDPOINT — Cloudflare
    Worker com o token do Jira guardado como Secret, nunca exposto ao navegador) para uma consulta
    em tempo real, e só se ele não responder cai para o último data.json publicado pelo GitHub
