@@ -1054,7 +1054,9 @@ function squadDetailHtml(curSquad){
     const dn=s.state==='active'?s.doneN:s.doneCount;
     if(!tot) return '<td>—</td>';
     return '<td>'+pct(dn,tot)+'% <small>('+dn+'/'+tot+')</small>'+mk(s)+'</td>';}).join('');
-  const rowGoal=list.map(s=>'<td style="min-width:160px;font-size:12px">'+esc((s.goal||'—').split('\n')[0].slice(0,120))+'</td>').join('');
+  // Sprint Goal saiu daqui (05/08/2026): o texto do goal é longo e o min-width:160px que ele
+  // exigia esticava todas as colunas de sprint, quebrando o espaçamento da tabela. O dado
+  // continua em "Sprint Agreements" (sprint ativa) e no "🏁 Resumo" (sprint encerrada).
   const rowCanc=list.map(s=>'<td>'+(s.cancSP>0?fmtSP(s.cancSP)+' <small>('+s.cancN+' issues)</small>':'—')+'</td>').join('');
   let html='<div class="panel"><h2>Métricas-chave — '+d.squad.name+' ('+curSquad+')</h2>'+
     '<p class="panel-sub">SP = campo <strong>Story Points</strong> (customfield_10028) — <strong>já é a somatória dos pontos de DEV + QA</strong> registrados nas histórias, tarefas e bugs. Sprints fechadas usam os <strong>números oficiais dos reports</strong> (badges do Jira lidos na época) — os campos atuais do Jira não preservam a foto da sprint (scope commitment, SP re-estimados, clones). Valores com "≈" são reconstruídos dos campos atuais. Sprint ativa: leitura ao vivo, excluindo subtarefas e canceladas.</p>'+
@@ -1066,7 +1068,6 @@ function squadDetailHtml(curSquad){
     '<tr><td><strong>Volume de cards</strong></td>'+rowVol+'</tr>'+
     '<tr><td><strong>Issues Done (%)</strong></td>'+rowIss+'</tr>'+
     '<tr><td><strong>Cancelled SP</strong> <small>(fora do scope)</small></td>'+rowCanc+'</tr>'+
-    '<tr><td><strong>Sprint Goal</strong></td>'+rowGoal+'</tr>'+
     '</tbody></table></div></div>';
   // 🏁 Resumo da sprint encerrada (formato Sprint Review)
   if(d.review){
