@@ -628,13 +628,25 @@ function processSquad(sq, nodes, report){
     }
     active.deliveries=Object.entries(gm).sort((a,b)=>b[1].sp-a[1].sp);
     active.doneList=acts.filter(r=>r.cat==='done').map(r=>({key:r.key,summary:r.summary,sp:r.sp}));
-    // Breakdown do trabalho EM ANDAMENTO por status — contando SUBTAREFAS (é nelas que o trabalho
-    // acontece, não na história inteira). Considera todas as subtarefas das histórias da sprint
-    // ativa cujo próprio status está na categoria "em andamento" (indeterminate), qualquer que seja
-    // o status da história-pai, agrupadas pelo status da subtarefa.
-    const ipSub={};
-    for(const r of acts){ for(const st of (r.subs||[])){ if(st.c==='indeterminate'){ ipSub[st.s]=(ipSub[st.s]||0)+1; } } }
-    active.inprogSubByStatus=Object.entries(ipSub).sort((a,b)=>b[1]-a[1]);
+    // Breakdown do trabalho EM ANDAMENTO por status — UNIDADE DE TRABALHO (folha da árvore).
+    // Regra: toda subtarefa em andamento conta; o card conta apenas quando NÃO tem nenhuma
+    // subtarefa em andamento (não foi quebrado, ou o próprio card é a unidade — PENDING QA,
+    // BLOCKED, REJECTED BY QA…). Assim nada é contado duas vezes (história + subtarefa) e a
+    // soma reconcilia com as colunas do board.
+    // POR QUE MUDOU (05/08/2026): a versão anterior contava SÓ subtarefas, o que tornava o
+    // painel dependente do estilo de cada squad — medido ao vivo no Jira: AE tinha 69 subtarefas
+    // na sprint (10 em andamento) enquanto INF tinha 3 (ZERO em andamento), então o painel
+    // simplesmente desaparecia para INF apesar de 10 cards em andamento. Pior: statuses que só
+    // existem no nível do card (PENDING QA, BLOCKED, REJECTED BY QA) ficavam invisíveis — AE
+    // mostrava 10 unidades quando o board tinha 23 itens em andamento em 5 statuses.
+    const ipLeaf={}; let ipSubN=0, ipCardN=0;
+    for(const r of acts){
+      const subsIP=(r.subs||[]).filter(s=>s.c==='indeterminate');
+      for(const st of subsIP){ ipLeaf[st.s]=(ipLeaf[st.s]||0)+1; ipSubN++; }
+      if(r.cat==='indeterminate' && !subsIP.length){ ipLeaf[r.status]=(ipLeaf[r.status]||0)+1; ipCardN++; }
+    }
+    active.inprogByStatus=Object.entries(ipLeaf).sort((a,b)=>b[1]-a[1]);
+    active.inprogUnits={sub:ipSubN,card:ipCardN};
   }
   // Desempenho por Dev/QA (responsável): sprint atual + média entregue por sprint FECHADA (viva —
   // recalculada a cada sprint encerrada). Participação = sprints fechadas em que teve issues.
@@ -931,15 +943,16 @@ function squadPlanHtml(sq){
         '<span><b style="color:var(--verde)">'+pd+'%</b>Concluído · '+fmtSP(a.doneSP)+' SP · '+a.doneN+' issues</span>'+
         '<span><b style="color:var(--turquesa)">'+pi+'%</b>Em andamento · '+fmtSP(a.inprogSP)+' SP · '+a.inprogN+' issues</span>'+
         '<span><b>'+pn+'%</b>Não iniciado · '+fmtSP(a.todoSP)+' SP · '+a.todoN+' issues</span></div>'+
-        // Decomposição do "Em andamento" por status DE SUBTAREFA (é nelas que o trabalho acontece):
-        // mini-barra empilhada proporcional à contagem de subtarefas + legenda com cor por status.
-        (()=>{const ipsub=a.inprogSubByStatus||[]; const tot=ipsub.reduce((x,kv)=>x+kv[1],0);
-          if(!ipsub.length) return '';
+        // Decomposição do "Em andamento" por status da UNIDADE DE TRABALHO (subtarefa quando a
+        // história foi quebrada, senão o próprio card): mini-barra empilhada + legenda por status.
+        (()=>{const ipl=a.inprogByStatus||[]; const tot=ipl.reduce((x,kv)=>x+kv[1],0);
+          if(!tot) return '';
+          const u=a.inprogUnits||{sub:0,card:0};
           const PAL=DS_SERIES_VAR;   // só cores da marca (DS), via var() para o tema seguir :root
-          const seg=ipsub.map((kv,i)=>'<div style="flex:'+kv[1]+';background:'+PAL[i%PAL.length]+'" title="'+esc(kv[0])+' · '+kv[1]+' subtarefa(s)"></div>').join('');
-          const leg=ipsub.map((kv,i)=>'<span class="ipp-item"><i style="background:'+PAL[i%PAL.length]+'"></i>'+esc(kv[0])+'<b>'+kv[1]+'</b></span>').join('');
+          const seg=ipl.map((kv,i)=>'<div style="flex:'+kv[1]+';background:'+PAL[i%PAL.length]+'" title="'+esc(kv[0])+' · '+kv[1]+' unidade(s) de trabalho"></div>').join('');
+          const leg=ipl.map((kv,i)=>'<span class="ipp-item"><i style="background:'+PAL[i%PAL.length]+'"></i>'+esc(kv[0])+'<b>'+kv[1]+'</b></span>').join('');
           return '<div class="ipp">'+
-            '<div class="ipp-head">No que o time está trabalhando agora <small>· '+tot+' subtarefas em andamento (o trabalho acontece nas subtarefas, não na história inteira)</small></div>'+
+            '<div class="ipp-head">No que o time está trabalhando agora <small>· '+tot+' unidades de trabalho ('+u.sub+' subtarefa'+(u.sub===1?'':'s')+' + '+u.card+' card'+(u.card===1?'':'s')+' sem quebra) — conta a subtarefa quando a história foi quebrada, senão o próprio card, sem contar os dois</small></div>'+
             '<div class="ipp-bar">'+seg+'</div>'+
             '<div class="ipp-legend">'+leg+'</div>'+
           '</div>';})();})()+
