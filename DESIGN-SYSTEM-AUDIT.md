@@ -127,14 +127,30 @@ a escolhida foi a **1b**. O que mudou no `index.html`:
 `--band-accent` `--band-btn-border` (a faixa não acompanha `--bg-page`: é Núcleo no escuro e
 Puro no claro), `--ico-accent` (Fluxo no escuro; `#92600A` no claro, onde Fluxo daria 1,2:1).
 
+### Logotipo — vetorizado dos arquivos oficiais
+
+`--logo` deixou de ser PNG. As duas variantes agora são **SVG**, geradas dos `.ai` oficiais
+(`Documents/Shippify/Logotipo (não modificar orientação, cores ou formato)/`):
+
+| Tema | Variante | Origem |
+|------|----------|--------|
+| Claro | lockup **colorido** sobre Puro | `Shippify_logo-fullcolor-rgb.ai` |
+| Escuro | versão **negativa** (branca) sobre Núcleo | `Shippify_logo-white-rgb.ai` |
+
+Os `.ai` são PDF 1.5 com 3 camadas, e só `Layer 1` está em `/ON` — `WONT EXPORT` e `LOGO_INFO`
+vêm marcadas `/OFF` no catálogo e ficaram de fora. As cores saíram do próprio vetor, sem
+conversão de espaço: **#231F20** (traço e wordmark), **#EF414C** (anel), **#FFDF00** (chama).
+Note que o amarelo do logotipo (`#FFDF00`) **não** é Fluxo (`#FEDD29`) — são valores distintos,
+e o logotipo mantém o dele.
+
+Ganho colateral: os dois SVG somam ~16 KB de data URI contra ~39 KB dos dois PNGs, e ficam
+nítidos em qualquer altura (o PNG anterior tinha 400×68 e já borrava em tela 2×).
+
 ### Desvios conscientes em relação ao mockup
 
 - **Padding da faixa de identidade:** 20/16 em vez de 28/24 do mockup. Aqui as faixas são
   **fixas** (`position:sticky`), então o header fechou em ~188px; com o padding do mockup
   passaria de 200px e comeria um quinto da tela em laptop.
-- **Lockup monocromático.** O mockup usa `logo-fullcolor.png`; o repo só tem as variantes
-  monocromáticas embutidas em base64 (`--logo`: branca no escuro, `#231F20` no claro). Para
-  usar a colorida basta trocar o data-URI de `--logo` no tema claro — nada mais muda.
 - **Tabela do Overview** mantida como está (colunas `% Done (SP)` / `% Done (issues)` em pill).
   O mockup propõe uma coluna única "Andamento" com barra; isso é mudança de conteúdo/IA, não
   de pele, e ficou fora do escopo desta rodada.
