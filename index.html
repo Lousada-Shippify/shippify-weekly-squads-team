@@ -121,17 +121,37 @@
   /* Header fixo da página única (28/07/2026): título + botões de squad sempre visíveis */
   .sticky-top{position:sticky;top:0;z-index:50;background:var(--bg-page);padding-top:var(--sp-05);
     box-shadow:var(--shadow-sticky);border-bottom:1px solid var(--border);margin-bottom:var(--sp-2)}
+  /* Altura real do header fixo, medida em runtime (trackStickyHeight) e usada pelo
+     scroll-margin-top das âncoras. O valor abaixo é só o fallback antes do 1º measure —
+     o header muda de altura quando quebra de linha em telas estreitas, então medir é
+     mais confiável que fixar um número. */
+  :root{--sticky-h:139px}
   .squad-nav{display:flex;align-items:center;gap:var(--sp-15);flex-wrap:wrap;padding:0 0 var(--sp-1)}
-  .squad-nav-top{font-family:var(--font-display);font-size:var(--fs-label);font-weight:600;color:var(--text-disabled);text-decoration:none;white-space:nowrap}
-  .squad-nav-top:hover{color:var(--text-secondary)}
-  .squad-nav .squad-tabs{margin-bottom:0}
-  /* Seções por squad: âncora de scroll com respiro pro header fixo não cobrir o título */
-  .squad-section{scroll-margin-top:152px;padding-top:var(--sp-05);margin-bottom:var(--sp-15)}
+  /* Seções por squad e o painel de Overview: âncora com respiro pro header fixo não
+     cobrir o título ao rolar até eles. */
+  .squad-section{scroll-margin-top:calc(var(--sticky-h) + var(--sp-15));padding-top:var(--sp-05);margin-bottom:var(--sp-15)}
+  #resumo-overview{scroll-margin-top:calc(var(--sticky-h) + var(--sp-15))}
   .squad-title{font-family:var(--font-display);font-size:var(--fs-h3);margin:var(--sp-3) 0 var(--sp-15);padding-bottom:var(--sp-1);border-bottom:2px solid var(--border)}
-  .squad-tabs{display:flex;gap:var(--sp-05);background:var(--bg-surface);border:1px solid var(--border);padding:var(--sp-05);border-radius:var(--r-md);width:fit-content;margin-bottom:var(--sp-2)}
-  .squad-tabs button{border:none;background:transparent;padding:var(--sp-1) var(--sp-15);border-radius:var(--r-sm);font-family:var(--font-display);font-size:var(--fs-sm);font-weight:600;cursor:pointer;color:var(--text-secondary)}
-  .squad-tabs button:hover{color:var(--text-primary)}
-  .squad-tabs button:focus-visible{outline:2px solid var(--turquesa);outline-offset:2px}
+  /* Trilho único de navegação (05/08/2026): "Resumos" e as 4 squads no mesmo grupo,
+     separados por filetes — lê como um segmented control em vez de um link solto. */
+  .squad-tabs{display:flex;align-items:stretch;background:var(--bg-surface);border:1px solid var(--border);
+    border-radius:var(--r-md);width:fit-content;max-width:100%;margin-bottom:var(--sp-2);
+    /* -x:auto em vez de hidden — em telas estreitas o trilho rola em vez de esconder a
+       última squad; -y:hidden mantém os itens recortados pelos cantos arredondados. */
+    overflow-x:auto;overflow-y:hidden;scrollbar-width:thin}
+  .squad-nav .squad-tabs{margin-bottom:0}
+  .squad-tabs-group{display:flex;align-items:stretch;border-left:1px solid var(--border)}
+  .squad-tabs .squad-nav-top,
+  .squad-tabs button{flex:none;display:inline-flex;align-items:center;border:none;background:transparent;
+    padding:var(--sp-1) var(--sp-15);font-family:var(--font-display);font-size:var(--fs-sm);font-weight:600;
+    color:var(--text-secondary);text-decoration:none;white-space:nowrap;cursor:pointer;
+    transition:color var(--dur-fast) var(--ease-out),background var(--dur-fast) var(--ease-out)}
+  .squad-tabs-group button + button{border-left:1px solid var(--border)}
+  .squad-tabs .squad-nav-top:hover,
+  .squad-tabs button:hover{color:var(--text-primary);background:var(--bg-card)}
+  /* outline para dentro: o container tem overflow:hidden e cortaria o anel de foco */
+  .squad-tabs .squad-nav-top:focus-visible,
+  .squad-tabs button:focus-visible{outline:2px solid var(--turquesa);outline-offset:-2px}
   .squad-tabs button.active{background:var(--bg-card);color:var(--text-primary);box-shadow:inset 0 -2px 0 var(--turquesa)}
   .panel{background:var(--bg-surface);border:1px solid var(--border);border-radius:var(--r-md);padding:var(--sp-3);margin-bottom:var(--sp-25)}
   .panel h2{font-size:var(--fs-h4);font-weight:600;margin:0 0 var(--sp-05)}
@@ -259,8 +279,10 @@
       </div>
     </header>
     <nav class="squad-nav">
-      <a class="squad-nav-top" href="#resumo-overview" title="Voltar aos resumos do topo">▲ Resumos</a>
-      <div class="squad-tabs" id="squadNav"></div>
+      <div class="squad-tabs">
+        <a class="squad-nav-top" href="#resumo-overview" title="Voltar aos resumos do topo">▲ Resumos</a>
+        <div class="squad-tabs-group" id="squadNav"></div>
+      </div>
     </nav>
   </div>
 
@@ -426,6 +448,29 @@ function initTheme(){
     let has=null; try{ has=localStorage.getItem(THEME_KEY); }catch(_){}
     if(!has) applyTheme(e.matches?'light':'dark',true);
   }); }catch(e){}
+}
+/* ── Altura do header fixo ──────────────────────────────────────────────────────────────────
+   Publica a altura real do .sticky-top em --sticky-h. O scroll-margin-top das âncoras usa
+   essa medida, então rolar até o Overview ou até uma squad nunca deixa o título escondido
+   atrás do header — inclusive quando ele quebra em duas linhas em telas estreitas. */
+function trackStickyHeight(){
+  const st=document.querySelector('.sticky-top'); if(!st) return;
+  const set=()=>document.documentElement.style.setProperty('--sticky-h',Math.ceil(st.getBoundingClientRect().height)+'px');
+  set();
+  try{ new ResizeObserver(set).observe(st); }catch(e){ addEventListener('resize',set); }
+}
+/* ── "▲ Resumos" ────────────────────────────────────────────────────────────────────────────
+   #resumo-overview é o primeiro painel da página, então o destino certo é o topo do
+   documento. O salto nativo pelo hash parava com o painel atrás do header fixo quando o
+   clique vinha do fim da página; aqui rolamos para 0 e mantemos o hash na URL para o link
+   continuar compartilhável. */
+function initTopLink(){
+  const a=document.querySelector('.squad-nav-top'); if(!a) return;
+  a.addEventListener('click',e=>{
+    e.preventDefault();
+    window.scrollTo({top:0,behavior:'smooth'});
+    try{ history.replaceState(null,'','#resumo-overview'); }catch(_){}
+  });
 }
 const esc = s => String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 const fmtSP = n => (Math.round(n*100)/100).toString();
@@ -1267,6 +1312,8 @@ async function boot(){
    Actions. Sem login, sem token, sem prompt para quem acessa o site. */
 const ACTIONS_URL='https://github.com/Lousada-Shippify/shippify-weekly-squads-team/actions/workflows/update-data.yml';
 initTheme();
+trackStickyHeight();
+initTopLink();
 document.getElementById('btnRefresh').onclick=()=>boot();
 boot();
 </script>
