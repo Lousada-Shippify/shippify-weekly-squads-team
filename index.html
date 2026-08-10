@@ -318,6 +318,16 @@
   .ipp-item{display:inline-flex;align-items:center;font-family:var(--font-body);font-size:var(--fs-cap);color:var(--text-secondary)}
   .ipp-item i{width:var(--sp-1);height:var(--sp-1);border-radius:var(--r-sm);margin-right:var(--sp-05);flex:none}
   .ipp-item b{margin-left:var(--sp-05);color:var(--text-primary);font-family:var(--font-display);font-size:var(--fs-cap)}
+  /* Diagnóstico da sprint — linhas com bolinha de severidade (crítico / atenção / saudável) */
+  .dg{display:flex;gap:var(--sp-1);align-items:flex-start;margin:0 0 var(--sp-1);line-height:1.5}
+  .dg:last-child{margin-bottom:0}
+  .dg>i,.dg-key i{width:var(--sp-1);height:var(--sp-1);border-radius:var(--r-pill);flex:none;background:var(--text-disabled)}
+  .dg>i{margin-top:7px}
+  .dg>span{flex:1}
+  .dg-crit>i,i.dg-crit{background:var(--magenta)}
+  .dg-warn>i,i.dg-warn{background:var(--amarelo)}
+  .dg-ok>i,i.dg-ok{background:var(--verde)}
+  .dg-key{display:inline-flex;align-items:center;gap:var(--sp-05);margin-left:var(--sp-15)}
   /* Utilitários de texto — evitam repetir style="color:…" inline no JS (66 ocorrências no audit) */
   .t-sec{color:var(--text-secondary)}
   .t-dim{color:var(--text-disabled)}
@@ -439,24 +449,9 @@ const SQUADS = [
 // anexo OE + Sprint Plans 5570562 e 22708225). Sprints fechadas não mudam mais; os campos atuais
 // do Jira NÃO preservam a foto da época (commitment, SP re-estimados, clones herdam sprint field),
 // então a reconstrução via JQL divergiria. Sem baseline → reconstrução, marcada com "≈".
-// Análise curada por sprint (Constraints / Risks / Validations). Só é injetada quando a sprint
-// ativa da squad bate com "sprint" abaixo — ao virar de sprint, atualizar este bloco (senão os
-// campos aparecem vazios até alguém preencher). Atualizado para a Sprint 5 em 22/07/2026 a partir
-// dos dados ao vivo do Jira (Day 7).
-const AGR_SUGGEST={
-  AE:{sprint:'Sprint 5',
-    constraints:'No public holidays. World Cup period — possible match breaks.\nDeveloper Patrick on vacation mid-sprint (14/07 ~ 20/07).\nDeveloper Victor on vacation at the end of the sprint (27/07 ~ 31/07).',
-    risks:'A large volume of items was pushed from Sprint 4 into this sprint and is being monitored, but there is no anticipated risk for Sprint 5 itself.\nCarryover (47.75 SP / 15 issues) is already ~80% resolved — 38.25 SP concluded; only ~9.5 SP still open (1 issue 8 SP not started + 1 approved by QA + 1 waiting for deploy).\n26 issues (65.5 SP) were cancelled this sprint — scope cleanup; confirm it was intentional.',
-    validations:'No external validations planned in this sprint.'},
-  OE:{sprint:'Sprint 5',
-    constraints:'Sprint goal is the continuation of the Control Tower build (macro objective).\nWorld Cup period (possible match breaks).\n45% of the scope (44 SP) is carryover from Sprint 4, concentrated in the post-dev (QA / code review) pipeline.',
-    risks:'The Control Tower (OE-139 / OE-140 / OE-141) is the bulk of the scope and is stuck in the post-dev pipeline: 25 SP REJECTED BY QA (OE-139, OE-140) + 12 SP CODE REVIEW (OE-141).\nQA rework is the bottleneck — OE-140 has bounced back 3x (1 code / 2 QA) and OE-139 2x (QA). Same pattern flagged in previous retros.\nScope (98 SP) is far above the historical delivered average (~23 SP) → overcommit risk. Only 14% done on Day 7.',
-    validations:'Control Tower views must pass QA before pulling new scope: Act Now action queue (OE-140), "Torre de Controle" view in Dash + Trips list (OE-139), Trip Detail (OE-141) — prioritize QA retest early.'},
-  EE:{sprint:'Sprint 5',
-    constraints:'Sprint goal not set in Jira (board 475) — recommend registering it on the sprint.\nSustainability is the dominant epic (43 SP / 12 issues).\nWorld Cup period (possible match breaks).',
-    risks:'Low carryover (14 SP / 2 issues, almost entirely already concluded) — healthy sign going into the sprint.\nHeavy concentration in the Sustainability epic (43 SP / 12 issues; only 3 done / 4 in progress on Day 7) — watch throughput so it does not pile up in the pipeline.\nIDWALL Phase 2 (9 SP / 2 issues) still with no delivery started.',
-    validations:'No critical external validations registered.\nValidate Sustainability deliverables with Operations as they are completed; confirm IDWALL Phase 2 end-to-end flow before release.'},
-};
+// Diagnóstico da sprint: era um bloco curado à mão por sprint (AGR_SUGGEST) que ficava em
+// branco a cada virada. Substituído em 05/08/2026 pelo diagnóstico automático calculado no
+// fim de processSquad() a partir dos dados ao vivo — ver "DIAGNÓSTICO AUTOMÁTICO DA SPRINT".
 const S1P={start:'2026-05-19',end:'2026-06-01'}, S2P={start:'2026-06-02',end:'2026-06-16'}, S3P={start:'2026-06-16',end:'2026-06-30'};
 const BASELINES = {
   AE: {
@@ -941,6 +936,105 @@ function processSquad(sq, nodes, report){
   retAll.sprints=retHist.length;
   const retCur=active?(retHist.find(h=>h.id===active.id)||null):null;
   const ret={cur:retCur,hist:retHist,all:retAll};
+  // ── DIAGNÓSTICO AUTOMÁTICO DA SPRINT ─────────────────────────────────────────────────────────
+  // Substitui os campos abertos de Sprint Agreements (Constraints / Risks / Validations), que
+  // dependiam de curadoria manual e ficavam em branco a cada virada de sprint (05/08/2026).
+  // Toda linha aqui é derivada dos dados ao vivo e carrega o número que sustenta a conclusão —
+  // nada de texto livre. Severidade: crit (vermelho) · warn (amarelo) · ok (verde).
+  if(active){
+    const A=recs.filter(r=>!r.cancelled&&r.ids.includes(active.id));
+    const scope=active.badgeScope||0, day=active.day||0, left=Math.max(0,WORKDAYS-day);
+    const C=[],R=[],V=[];
+    const add=(g,sev,text)=>g.push({sev,text});
+    const pl=(n,s1,s2)=>n+' '+(n===1?s1:s2);
+    const kl=arr=>arr.slice(0,4).map(r=>esc(r.key)).join(' · ')+(arr.length>4?' <span class="t-dim">+'+(arr.length-4)+'</span>':'');
+    const closedS=list.filter(s=>s.state==='closed');
+    const avgDel=closedS.length?closedS.reduce((x,s)=>x+(s.delivered||0),0)/closedS.length:0;
+    const alloc=devs.filter(d=>d.name!=='Sem responsável'&&d.sp>0);
+    const totAl=alloc.reduce((x,d)=>x+d.sp,0);
+
+    // ── Restrições & capacidade ──────────────────────────────────────────────────
+    if(active.carryNA){
+      add(C,'ok','Primeira sprint com dados no board — sem sprint anterior para medir carryover.');
+    }else{
+      const cp=pct(active.carrySP||0,scope);
+      add(C, cp>=40?'crit':(cp>=25?'warn':'ok'),
+        '<b>'+cp+'% do escopo veio da sprint anterior</b> — '+fmtSP(active.carrySP||0)+' SP em '+(active.carryN||0)+' issues. '+
+        (cp>=40?'A capacidade real para trabalho novo é de apenas '+fmtSP(scope-(active.carrySP||0))+' SP.'
+              :(cp>=25?'Um quarto da sprint já entrou comprometido com dívida.':'Carryover sob controle.')));
+    }
+    if(avgDel>0&&scope>0){
+      const ratio=Math.round(scope/avgDel*10)/10;
+      add(C, ratio>=1.8?'crit':(ratio>=1.3?'warn':'ok'),
+        '<b>Escopo de '+fmtSP(scope)+' SP contra média de '+fmtSP(avgDel)+' SP entregues</b> nas '+closedS.length+' sprints fechadas ('+ratio+'×). '+
+        (ratio>=1.8?'Overcommit: a squad historicamente não entrega esse volume — decida agora o que é sacrificável.'
+                  :(ratio>=1.3?'Acima do histórico; priorize o que não pode escorregar.':'Compatível com o histórico da squad.')));
+    }
+    const noEst=A.filter(r=>r.spNull);
+    if(noEst.length) add(C, noEst.length>=4?'warn':'ok',
+      '<b>'+pl(noEst.length,'card sem estimativa','cards sem estimativa')+'</b> ('+kl(noEst)+') — ficam fora do escopo e do burndown, então o gráfico não representa a sprint inteira.');
+    const noOwn=A.filter(r=>!r.assignee);
+    if(noOwn.length) add(C, noOwn.length>=3?'warn':'ok',
+      '<b>'+pl(noOwn.length,'card sem responsável','cards sem responsável')+'</b> ('+kl(noOwn)+') — ninguém assumiu, então não há a quem cobrar o andamento.');
+    if(alloc.length&&totAl>0){
+      const top=alloc[0], sh=pct(top.sp,totAl);
+      add(C, sh>=45?'crit':(sh>=35?'warn':'ok'),
+        '<b>'+esc(shortName(top.name))+' concentra '+sh+'% dos SP alocados</b> ('+fmtSP(top.sp)+' de '+fmtSP(totAl)+' SP entre '+alloc.length+' devs). '+
+        (sh>=35?'Ponto único de falha: uma ausência derruba a sprint.':'Distribuição equilibrada entre a squad.'));
+    }
+    if((active.cancN||0)>0) add(C, (active.cancSP||0)>=scope*0.3?'warn':'ok',
+      '<b>'+pl(active.cancN,'issue cancelada','issues canceladas')+'</b> ('+fmtSP(active.cancSP||0)+' SP) saíram do escopo depois do planejamento.');
+
+    // ── Riscos ───────────────────────────────────────────────────────────────────
+    const paceNow=day>0?active.doneSP/day:0, need=left>0?active.remaining/left:active.remaining;
+    add(R, (left>0&&need>paceNow*2)?'crit':((left>0&&need>paceNow*1.3)?'warn':'ok'),
+      '<b>Dia '+day+'/'+WORKDAYS+' com '+pct(active.doneSP,scope)+'% concluído</b> (ideal '+Math.round(day/WORKDAYS*100)+'%). '+
+      (left>0?'Faltam '+fmtSP(active.remaining)+' SP em '+pl(left,'dia útil','dias úteis')+' → exige '+fmtSP(need)+' SP/dia contra '+fmtSP(paceNow)+' SP/dia do ritmo atual.'
+            :'Último dia da sprint: '+fmtSP(active.remaining)+' SP seguem abertos e viram carryover.'));
+    const ipl=active.inprogByStatus||[], totU=ipl.reduce((x,kv)=>x+kv[1],0);
+    const grp=re=>ipl.filter(kv=>re.test(kv[0])).reduce((x,kv)=>x+kv[1],0);
+    if(totU){
+      const qRev=grp(/code\s*review|pr\s*review/i), qQA=grp(/\bqa\b|testing/i), qBlk=grp(/block|waiting\s*for\s*tasks/i);
+      if(qRev) add(R, pct(qRev,totU)>=50?'crit':(pct(qRev,totU)>=30?'warn':'ok'),
+        '<b>'+qRev+' de '+totU+' unidades em andamento estão em code review</b> ('+pct(qRev,totU)+'%)'+
+        (pct(qRev,totU)>=30?' — o trabalho sai do dev mas não fecha; a revisão é o gargalo da sprint.':' — fila de revisão em volume normal.'));
+      if(qQA) add(R, pct(qQA,totU)>=40?'warn':'ok',
+        '<b>'+pl(qQA,'unidade na fila de QA','unidades na fila de QA')+'</b> — '+pct(qQA,totU)+'% de tudo que está em andamento depende do QA para virar entrega.');
+      if(qBlk) add(R,'crit',
+        '<b>'+pl(qBlk,'unidade parada','unidades paradas')+'</b> (BLOCKED / WAITING FOR TASKS) — dependência externa segurando a entrega.');
+      const nd=alloc.length||1, wip=Math.round(totU/nd*10)/10;
+      add(R, wip>=3?'crit':(wip>=2?'warn':'ok'),
+        '<b>WIP de '+wip+' '+(wip===1?'item':'itens')+' por dev</b> ('+totU+' em andamento para '+pl(nd,'dev','devs')+'). '+
+        (wip>=2?'Paralelismo alto: tudo anda devagar ao mesmo tempo e nada fecha.':'WIP saudável.'));
+    }
+    if(reworkCards.length){
+      const totRej=reworkCards.reduce((x,r)=>x+r.total,0), big=reworkCards.filter(r=>r.total>=2);
+      add(R, big.length>=3?'crit':(reworkCards.length>=3?'warn':'ok'),
+        '<b>'+pl(reworkCards.length,'card voltou por rejeição','cards voltaram por rejeição')+'</b> — '+pl(totRej,'devolução','devoluções')+' no total'+(big.length?', '+big.length+' com 2 ou mais':'')+': '+kl(reworkCards)+'.');
+    }
+    if(!active.goal) add(R,'warn',
+      '<b>Sprint sem goal registrado no Jira</b> — sem objetivo declarado não existe critério para cortar escopo quando apertar.');
+
+    // ── Validações pendentes ─────────────────────────────────────────────────────
+    const qQAcards=A.filter(r=>QA_WAIT_RE.test(r.status)||QA_PROG_RE.test(r.status));
+    if(qQAcards.length){
+      const spQA=qQAcards.reduce((x,r)=>x+r.sp,0);
+      add(V, left>0&&qaRow.tsp>0&&qaRow.tsp/left>3?'warn':'ok',
+        '<b>'+pl(qQAcards.length,'card na mão do QA','cards na mão do QA')+'</b> ('+fmtSP(spQA)+' SP de dev): '+kl(qQAcards)+'. '+
+        (qaRow.tsp>0?'Ainda há '+fmtSP(qaRow.tsp)+' SP de QA não iniciados para '+pl(left,'dia útil','dias úteis')+'.':'Todo o trabalho de QA da sprint já começou.'));
+    }
+    const rwOpen=reworkCards.filter(r=>!/conclu|done/i.test(r.status||''));
+    if(rwOpen.length) add(V,'warn',
+      '<b>'+pl(rwOpen.length,'card rejeitado ainda aberto','cards rejeitados ainda abertos')+'</b> ('+kl(rwOpen)+') — vão ocupar a fila de QA de novo antes do fim da sprint.');
+    const waitDep=A.filter(r=>/deploy|release|monitoring/i.test(r.status||''));
+    if(waitDep.length) add(V,'ok',
+      '<b>'+pl(waitDep.length,'card pronto aguardando deploy/monitoring','cards prontos aguardando deploy/monitoring')+'</b> ('+kl(waitDep)+') — entrega técnica feita, falta o passo de liberação.');
+    if(!V.length) add(V,'ok','Nenhum card em fila de validação no momento — nada esperando QA, deploy ou reteste.');
+
+    const ord={crit:0,warn:1,ok:2};
+    const srt=g=>g.sort((x,y)=>ord[x.sev]-ord[y.sev]);
+    active.diag={constraints:srt(C),risks:srt(R),validations:srt(V)};
+  }
   return {squad:sq, sprints:list, active, issueCount:nodes.length, devs, qa:qaRow, review, reworkCards, ret};
 }
 
@@ -1046,9 +1140,11 @@ function squadPlanHtml(sq){
     // "atrás do ideal" com folga de 0,5 SP (mesmo limiar do rótulo abaixo, para o filete e o
     // texto nunca discordarem entre si).
     const behind=diff>0.5;
-    const agrKey=f=>'wh_agr_'+sq.code+'_'+a.id+'_'+f;
-    const agrPh={constraints:'Ex.: feriados, férias (Patrick 08/07~20/07), Copa do Mundo, deadlines críticos…',risks:'Ex.: riscos de deploy, interdependências com outras squads…',validations:'Ex.: validação com Amazon (MM) em 08/07 — teste "live"…'};
-    const agrRow=(f,lbl)=>'<tr><th>'+lbl+'</th><td><textarea data-agr="'+f+'" data-key="'+agrKey(f)+'" placeholder="'+agrPh[f]+'"></textarea></td></tr>';
+    // Diagnóstico automático (substituiu os campos abertos de Constraints/Risks/Validations).
+    const dgRow=(lbl,items)=>'<tr><th>'+lbl+'</th><td>'+
+      ((items&&items.length)
+        ? items.map(i=>'<div class="dg dg-'+i.sev+'"><i></i><span>'+i.text+'</span></div>').join('')
+        : '<span class="t-dim">Sem apontamentos.</span>')+'</td></tr>';
     const delivHtml=(a.deliveries||[]).slice(0,7).map(([nm,g])=>{
       const p=pct(g.dsp,g.sp), pi=pct(g.insp,g.sp);
       const tN=g.n-g.dn-g.inN, tSP=g.sp-g.dsp-g.insp;
@@ -1067,9 +1163,13 @@ function squadPlanHtml(sq){
       '<tr><th>Sprint Goal</th><td>'+esc(a.goal||'Sem goal registrado no Jira — defina o goal na sprint do board')+'</td></tr>'+
       '<tr><th>Main deliveries <small style="color:var(--text-secondary)">(auto, por épico/tag)</small></th><td>'+delivHtml+'</td></tr>'+
       '<tr><th>'+ico('check',14)+' Tarefas concluídas ('+(a.doneList?a.doneList.length:0)+')</th><td>'+doneListHtml+'</td></tr>'+
-      agrRow('constraints','Sprint Constraints '+ico('pencil',13))+agrRow('risks','Risks '+ico('pencil',13))+agrRow('validations','Validations '+ico('pencil',13))+
+      dgRow('🧭 Restrições &amp; capacidade',(a.diag||{}).constraints)+
+      dgRow('⚠️ Riscos',(a.diag||{}).risks)+
+      dgRow('✅ Validações pendentes',(a.diag||{}).validations)+
       '</tbody></table>'+
-      '<p style="font-size:11px;color:var(--text-disabled);margin:6px 0 14px">'+ico('pencil',13)+' campos editáveis — salvos automaticamente neste navegador (localStorage).</p>'+
+      '<p style="font-size:var(--fs-label);color:var(--text-disabled);margin:6px 0 14px">'+
+        'Diagnóstico gerado a cada carga a partir dos dados do Jira — escopo, ritmo, filas, retrabalho e carga de QA. '+
+        '<span class="dg-key"><i class="dg-crit"></i>crítico</span> <span class="dg-key"><i class="dg-warn"></i>atenção</span> <span class="dg-key"><i class="dg-ok"></i>saudável</span></p>'+
       (()=>{const pd=pct(a.doneSP,a.badgeScope), pi=pct(a.inprogSP,a.badgeScope), pn=Math.max(0,100-pd-pi);
         return '<h4 style="margin:var(--sp-2) 0 var(--sp-05);font-size:var(--fs-sm)">Progresso do sprint <small style="color:var(--text-secondary);font-weight:400">(por SP — espelha o gadget do Jira)</small></h4>'+
         '<div class="sbar lg"><div style="background:var(--verde);width:'+pd+'%"></div><div style="background:var(--turquesa);width:'+pi+'%"></div></div>'+
@@ -1131,19 +1231,6 @@ function renderAll(){
     '</section>';
   }
   el.innerHTML=html;
-  // campos editáveis (Sprint Agreements) — mesmo comportamento de antes, salvos no navegador
-  el.querySelectorAll('textarea[data-key]').forEach(t=>{
-    const m=t.dataset.key.match(/^wh_agr_(\w+)_(.+)_(constraints|risks|validations)$/);
-    let v=localStorage.getItem(t.dataset.key);
-    if(v==null&&m){
-      const [,code,,field]=m, sug=AGR_SUGGEST[code];
-      if(sug&&DATA[code]&&DATA[code].active&&sprintLabel(DATA[code].active)===sug.sprint){
-        v=sug[field]; localStorage.setItem(t.dataset.key,v);
-      }
-    }
-    t.value=v||'';
-    t.oninput=()=>localStorage.setItem(t.dataset.key,t.value);
-  });
   for(const sq of SQUADS){ drawBurndown(sq); drawVelocity(sq.code); }
   // Tabelas com sprints em coluna abrem já roladas até o fim (sprint atual à vista)
   el.querySelectorAll('.table-scroll[data-scroll-end]').forEach(w=>{ w.scrollLeft=w.scrollWidth; });
