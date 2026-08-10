@@ -472,6 +472,10 @@ const BASELINES = {
 };
 const MONTHS_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 const MONTHS_EN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+// Duração PADRÃO de sprint em dias úteis — hoje só é fallback. A duração REAL de cada sprint vem
+// das datas do Jira (workdaysBetween): as sprints das squads têm 11 dias úteis (28/07–11/08, por
+// exemplo) e não 15. Com o 15 fixo, o ideal e o eixo do burndown ficavam 4 dias à frente e uma
+// sprint que termina amanhã aparecia como "Day 10 of 15", no meio do caminho (10/08/2026).
 const WORKDAYS = 15;
 let DATA = null;
 let charts = [];
@@ -621,12 +625,26 @@ const pct = (a,b) => b>0 ? Math.round(a/b*100) : 0;
 const ddmm = d => String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0');
 const ddmmyyyy = d => ddmm(d)+'/'+d.getFullYear();
 
-function workdayIndex(start, today){
+// Dias úteis entre duas datas (inclusive nas duas pontas) = duração real da sprint.
+function workdaysBetween(start, end){
+  if(!start||!end) return 0;
+  let d=new Date(start); d.setHours(0,0,0,0);
+  const t=new Date(end); t.setHours(0,0,0,0);
+  let n=0;
+  while(d<=t && n<60){
+    const wd=d.getDay();
+    if(wd!==0 && wd!==6) n++;
+    d.setDate(d.getDate()+1);
+  }
+  return n;
+}
+function workdayIndex(start, today, max){
   // business days elapsed from sprint start (inclusive) to today
   let d=new Date(start); d.setHours(0,0,0,0);
   const t=new Date(today); t.setHours(0,0,0,0);
+  const cap=max||WORKDAYS;
   let n=0;
-  while(d<=t && n<WORKDAYS){
+  while(d<=t && n<cap){
     const wd=d.getDay();
     if(wd!==0 && wd!==6) n++;
     d.setDate(d.getDate()+1);
@@ -739,7 +757,9 @@ function processSquad(sq, nodes, report){
     // por isso NÃO usamos mais `report` para sobrescrever os números; o cálculo via JQL abaixo
     // (que já bate com o widget "Progresso do sprint" ao vivo do Jira) é a fonte da verdade.
     void report;
-    active.day=workdayIndex(active.start,new Date());
+    // Duração real desta sprint (dias úteis entre start e end do Jira); cai no padrão se faltar data.
+    active.len=workdaysBetween(active.start,active.end)||WORKDAYS;
+    active.day=workdayIndex(active.start,new Date(),active.len);
     // Main deliveries: agrupa cards da sprint ativa por épico (parent) ou tag [XXX] do summary
     const acts=recs.filter(r=>!r.cancelled&&r.ids.includes(active.id));
     const gm={};
@@ -943,7 +963,7 @@ function processSquad(sq, nodes, report){
   // nada de texto livre. Severidade: crit (vermelho) · warn (amarelo) · ok (verde).
   if(active){
     const A=recs.filter(r=>!r.cancelled&&r.ids.includes(active.id));
-    const scope=active.badgeScope||0, day=active.day||0, left=Math.max(0,WORKDAYS-day);
+    const scope=active.badgeScope||0, day=active.day||0, len=active.len||WORKDAYS, left=Math.max(0,len-day);
     const C=[],R=[],V=[];
     const add=(g,sev,text)=>g.push({sev,text});
     const pl=(n,s1,s2)=>n+' '+(n===1?s1:s2);
@@ -988,7 +1008,7 @@ function processSquad(sq, nodes, report){
     // ── Riscos ───────────────────────────────────────────────────────────────────
     const paceNow=day>0?active.doneSP/day:0, need=left>0?active.remaining/left:active.remaining;
     add(R, (left>0&&need>paceNow*2)?'crit':((left>0&&need>paceNow*1.3)?'warn':'ok'),
-      '<b>Dia '+day+'/'+WORKDAYS+' com '+pct(active.doneSP,scope)+'% concluído</b> (ideal '+Math.round(day/WORKDAYS*100)+'%). '+
+      '<b>Dia '+day+'/'+len+' com '+pct(active.doneSP,scope)+'% concluído</b> (ideal '+Math.round(day/len*100)+'%). '+
       (left>0?'Faltam '+fmtSP(active.remaining)+' SP em '+pl(left,'dia útil','dias úteis')+' → exige '+fmtSP(need)+' SP/dia contra '+fmtSP(paceNow)+' SP/dia do ritmo atual.'
             :'Último dia da sprint: '+fmtSP(active.remaining)+' SP seguem abertos e viram carryover.'));
     const ipl=active.inprogByStatus||[], totU=ipl.reduce((x,kv)=>x+kv[1],0);
@@ -1074,9 +1094,9 @@ async function loadAll(){
   return results;
 }
 
-function statusPill(p, day){
+function statusPill(p, day, len){
   if(day<=2 && p<10) return '<span class="pill blue">'+p+'% · início</span>';
-  const ideal = Math.round(day/WORKDAYS*100);
+  const ideal = Math.round(day/(len||WORKDAYS)*100);
   if(p>=ideal-5) return '<span class="pill green">'+p+'%</span>';
   if(p>=ideal*0.5) return '<span class="pill yellow">'+p+'%</span>';
   return '<span class="pill red">'+p+'%</span>';
@@ -1096,13 +1116,13 @@ function summariesHtml(){
     rows.push('<tr><td><strong>'+sq.name+'</strong><br><span class="t-sec" style="font-size:var(--fs-cap)">'+esc(sprintLabel(a))+' · '+ddmm(a.start)+'–'+ddmm(a.end)+'</span></td>'+
       '<td style="max-width:280px">'+esc((a.goal||'—').split('\n').slice(0,3).join(' '))+'</td>'+
       '<td>'+fmtSP(a.badgeScope)+'</td><td>'+fmtSP(a.doneSP)+'</td><td>'+fmtSP(a.remaining)+'</td>'+
-      '<td>'+statusPill(pct(a.doneSP,a.badgeScope),a.day)+'</td>'+
-      '<td>'+statusPill(pct(a.doneN,a.todoN+a.inprogN+a.doneN),a.day)+'</td></tr>');
+      '<td>'+statusPill(pct(a.doneSP,a.badgeScope),a.day,a.len)+'</td>'+
+      '<td>'+statusPill(pct(a.doneN,a.todoN+a.inprogN+a.doneN),a.day,a.len)+'</td></tr>');
   }
   // As squads podem estar em sprints diferentes (ex.: INF na Sprint 8 e as outras na 6), então o
   // título do Overview não fixa mais um número de sprint — cada linha mostra a sua.
   const anyActive=SQUADS.map(s=>DATA[s.code].active).find(Boolean);
-  const dayStr=anyActive?('Day '+anyActive.day+' of '+WORKDAYS):'';
+  const dayStr=anyActive?('Day '+anyActive.day+' of '+(anyActive.len||WORKDAYS)):'';
   let html='<div class="panel" id="resumo-overview"><h2>'+ico('flag')+'Overview — sprint atual de cada squad <span class="pill blue">'+dayStr+'</span></h2>'+
     '<p class="panel-sub">SP = campo <strong>Story Points</strong> (customfield_10028), que <strong>já é a somatória dos pontos de DEV + QA</strong> da história/tarefa/bug, somado por status category do board, <strong>sem subtarefas</strong> (os pontos vivem nos cards principais — regra igual aos badges do backlog nas 3 squads) e <strong>excluindo issues canceladas</strong> (statuses CANCEL têm categoria “done” no Jira mas não são entrega). Duas métricas: <strong>% Done (SP)</strong> = Completed SP ÷ Scope SP · <strong>% Done (issues)</strong> = contagem de tickets.</p>'+
     '<table><thead><tr><th>Squad</th><th>Sprint Goal</th><th>Scope SP</th><th>Completed SP</th><th>Remaining SP</th><th>% Done (SP)</th><th>% Done (issues)</th></tr></thead><tbody>'+rows.join('')+
@@ -1135,7 +1155,8 @@ function squadPlanHtml(sq){
     const d=DATA[sq.code], a=d.active;
     if(!a) return '<div class="squad-block"><h3>'+sq.name+'</h3><p style="color:var(--text-secondary);margin:0">Sem sprint ativa no momento (virada de sprint) — inicie a próxima sprint no board para os dados aparecerem.</p></div>';
     const pSP=pct(a.doneSP,a.badgeScope), pIss=pct(a.doneN,a.todoN+a.inprogN+a.doneN);
-    const idealRem=a.badgeScope*(1-a.day/WORKDAYS);
+    const LEN=a.len||WORKDAYS;
+    const idealRem=a.badgeScope*(1-a.day/LEN);
     const diff=a.remaining-idealRem;
     // "atrás do ideal" com folga de 0,5 SP (mesmo limiar do rótulo abaixo, para o filete e o
     // texto nunca discordarem entre si).
@@ -1157,7 +1178,7 @@ function squadPlanHtml(sq){
       ? a.doneList.slice(0,10).map(t=>'<div class="deliv">'+ico('check',14)+' <strong>'+esc(t.key)+'</strong> — '+esc(t.summary.slice(0,90))+' <small style="color:var(--text-secondary)">('+fmtSP(t.sp)+' SP)</small></div>').join('')
         +(a.doneList.length>10?'<small class="brk">… +'+(a.doneList.length-10)+' tarefas</small>':'')
       : '<span style="color:var(--text-secondary)">Nenhuma tarefa concluída ainda nesta sprint.</span>';
-    html+='<div class="squad-block"><h3>'+sq.name+' — '+esc(sprintLabel(a))+' <span class="pill blue">Day '+a.day+'/'+WORKDAYS+'</span></h3>'+
+    html+='<div class="squad-block"><h3>'+sq.name+' — '+esc(sprintLabel(a))+' <span class="pill blue">Day '+a.day+'/'+LEN+'</span></h3>'+
       '<h4 style="margin:var(--sp-15) 0 var(--sp-1);font-size:var(--fs-sm)">Sprint Agreements</h4>'+
       '<table class="agr"><tbody>'+
       '<tr><th>Sprint Goal</th><td>'+esc(a.goal||'Sem goal registrado no Jira — defina o goal na sprint do board')+'</td></tr>'+
@@ -1194,7 +1215,7 @@ function squadPlanHtml(sq){
       kpi('Scope SP',fmtSP(a.badgeScope),a.todoN+a.inprogN+a.doneN+' issues')+
       kpi('Completed SP',fmtSP(a.doneSP),a.doneN+' issues done')+
       kpi('Remaining SP',fmtSP(a.remaining),a.todoN+' to do · '+a.inprogN+' in progress')+
-      kpi('% Done (SP)',pSP+'%','ideal dia '+a.day+': '+Math.round(a.day/WORKDAYS*100)+'%',behind?'crit':'')+
+      kpi('% Done (SP)',pSP+'%','ideal dia '+a.day+': '+Math.round(a.day/LEN*100)+'%',behind?'crit':'')+
       kpi('% Done (issues)',pIss+'%','métrica do gadget Jira')+
       kpi('vs. ideal',(diff>0.5?'+':'')+fmtSP(diff)+' SP',diff>0.5?'atrás do ideal':(diff<-0.5?'à frente do ideal':'on track'),behind?'crit':'')+
       (a.cancSP>0?kpi('Cancelled SP',fmtSP(a.cancSP),a.cancN+' issues canceladas — fora do scope'):'')+
@@ -1207,7 +1228,8 @@ function squadPlanHtml(sq){
 function drawBurndown(sq){
   const a=DATA[sq.code]&&DATA[sq.code].active; if(!a) return;
   const labels=['Start']; const ideal=[a.badgeScope]; const actual=[a.badgeScope];
-  for(let i=1;i<=WORKDAYS;i++){labels.push('D'+i);ideal.push(Math.max(0,+(a.badgeScope*(1-i/WORKDAYS)).toFixed(1)));actual.push(i===a.day?a.remaining:null);}
+  const LEN=a.len||WORKDAYS;
+  for(let i=1;i<=LEN;i++){labels.push('D'+i);ideal.push(Math.max(0,+(a.badgeScope*(1-i/LEN)).toFixed(1)));actual.push(i===a.day?a.remaining:null);}
   const ctx=document.getElementById('bd_'+sq.code); if(!ctx) return;
   charts.push(new Chart(ctx,{type:'line',data:{labels,datasets:[
     {label:'Ideal (SP remaining)',data:ideal,borderColor:DS.textDim,borderDash:[5,4],pointRadius:0,tension:0},
@@ -1531,7 +1553,7 @@ async function boot(){
     loading.classList.add('hidden');
     const anyA=SQUADS.map(s=>DATA[s.code].active).find(Boolean);
     const gen=window.__GEN__?new Date(window.__GEN__).toLocaleString('pt-BR'):'—';
-    document.getElementById('subtitle').textContent=anyA?sprintLabel(anyA)+' · Day '+anyA.day+' of '+WORKDAYS:'Dados do Jira';
+    document.getElementById('subtitle').textContent=anyA?sprintLabel(anyA)+' · Day '+anyA.day+' of '+(anyA.len||WORKDAYS):'Dados do Jira';
     document.getElementById('ctaStatus').innerHTML=window.__LIVE__
       ?ico('bolt',13)+' Consultado ao vivo agora às '+new Date(window.__GEN__).toLocaleTimeString('pt-BR')
       :(LIVE_ENDPOINT
