@@ -972,7 +972,7 @@ function processSquad(sq, nodes, report){
     }
     const noEst=A.filter(r=>r.spNull);
     if(noEst.length) add(C, noEst.length>=4?'warn':'ok',
-      '<b>'+pl(noEst.length,'card sem estimativa','cards sem estimativa')+'</b> ('+kl(noEst)+') — ficam fora do escopo e do burndown, então o gráfico não representa a sprint inteira.');
+      '<b>'+pl(noEst.length,'card sem estimativa','cards sem estimativa')+'</b> ('+kl(noEst)+') — fora do escopo e do burndown, então o gráfico não representa a sprint inteira.');
     const noOwn=A.filter(r=>!r.assignee);
     if(noOwn.length) add(C, noOwn.length>=3?'warn':'ok',
       '<b>'+pl(noOwn.length,'card sem responsável','cards sem responsável')+'</b> ('+kl(noOwn)+') — ninguém assumiu, então não há a quem cobrar o andamento.');
