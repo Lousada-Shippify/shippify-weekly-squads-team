@@ -436,6 +436,14 @@ const retFactor = v => (v===null||v===undefined||isNaN(v)) ? '—' : ('×'+(Math
 // Goldner Silva (PM) e Rayanne Ferreira (Design) na AE. QA já é tratado à parte via QA_OWNER.
 // INF (confirmado em 28/07/2026): Luana é QA (aparece na linha de QA) e Reginaldo Soares não é dev.
 const NON_DEV = ['Gabriel Goldner Silva', 'Rayanne Ferreira', 'Reginaldo Soares'];
+// Apelidos de EXIBIÇÃO para contas que não são pessoas. "Jira Triage Agent" é a conta de
+// automação que recebe os cards de reunião/treinamento da squad; mostrar o nome do bot nos
+// indicadores confunde a leitura (pedido de Vitor em 12/08/2026). O apelido é aplicado na
+// ingestão (recs.push), então vale para tabelas, matriz, retrabalho e diagnóstico de uma vez.
+// A linha continua contando como dev, com SP, % e performance — só o texto muda.
+const NAME_ALIAS = { 'Jira Triage Agent': 'Reuniões ou Treinamentos' };
+const ALIAS_LABELS = new Set(Object.values(NAME_ALIAS));
+const aliasName = n => (n && NAME_ALIAS[n]) || n;
 const SQUADS = [
   // NENHUMA squad inclui subtarefas: com a migração dos pontos para o campo Story Points
   // (DEV + QA) nos cards principais, incluir subtasks na AE duplicava pontos.
@@ -614,6 +622,7 @@ const PARTICLE_RE = /^(da|das|de|do|dos|e|del|la|van|von)$/i;
 function shortName(full){
   const s=String(full??'').trim();
   if(!s || s==='Sem responsável') return s;
+  if(ALIAS_LABELS.has(s)) return s;                 // rótulo, não nome de pessoa — não encurtar
   const tail=s.match(/\s+—\s+.*$/);                 // preserva sufixo de rótulo (ex.: " — QA")
   const base=tail?s.slice(0,tail.index):s;
   const parts=base.split(/\s+/).filter(p=>p&&!PARTICLE_RE.test(p));
@@ -675,7 +684,7 @@ function processSquad(sq, nodes, report){
     const sorted = mySprints.slice().sort((a,b)=>new Date(a.startDate||0)-new Date(b.startDate||0));
     recs.push({key:n.key, sp, cat, cancelled, status:(f.status&&f.status.name)||'—', ids:sorted.map(x=>x.id),
       summary:f.summary||'', epic:(f.parent&&f.parent.fields&&f.parent.fields.summary)||null,
-      assignee:(f.assignee&&f.assignee.displayName)||null, spNull:f[SP_FIELD]==null,
+      assignee:aliasName((f.assignee&&f.assignee.displayName)||null), spNull:f[SP_FIELD]==null,
       spqa:(typeof f[QA_FIELD]==='number'?f[QA_FIELD]:null),
       spdev:(typeof f[DEV_FIELD]==='number'?f[DEV_FIELD]:null),
       rejCode:n.rejCode||0, rejQA:n.rejQA||0, lastRejAt:n.lastRejAt||null, lastRejWhat:n.lastRejWhat||null,
