@@ -389,9 +389,10 @@
 // Campos de pontos (validados em 17/07/2026 contra OE Sprint 5):
 //   customfield_10028 "Story Points"      = TOTAL da issue (já é a somatória DEV + QA)
 //   customfield_10546 "Story point QA"    = parcela de QA
-//   customfield_10548 "Story point total" = parcela de DEV  (10028 = 10546 + 10548)
+//   customfield_10548 "Story point dev"   = parcela de DEV  (10028 = 10546 + 10548 em 137/146 cards)
 const SP_FIELD = 'customfield_10028';
 const QA_FIELD = 'customfield_10546';
+const DEV_FIELD = 'customfield_10548';   // "Story point dev" — parcela de DEV estimada na refinement
 const SPRINT_FIELD = 'customfield_10020';
 // Proxy serverless (Cloudflare Worker) para consulta ao Jira em tempo real, sem exigir login/token
 // de quem acessa o site. Preencha com a URL pública do Worker depois do deploy
@@ -676,6 +677,7 @@ function processSquad(sq, nodes, report){
       summary:f.summary||'', epic:(f.parent&&f.parent.fields&&f.parent.fields.summary)||null,
       assignee:(f.assignee&&f.assignee.displayName)||null, spNull:f[SP_FIELD]==null,
       spqa:(typeof f[QA_FIELD]==='number'?f[QA_FIELD]:null),
+      spdev:(typeof f[DEV_FIELD]==='number'?f[DEV_FIELD]:null),
       rejCode:n.rejCode||0, rejQA:n.rejQA||0, lastRejAt:n.lastRejAt||null, lastRejWhat:n.lastRejWhat||null,
       touchQA:(n.touchQA===undefined
         ? ((n.rejQA||0)>0||RET_QA_RE.test((f.status&&f.status.name)||'')||RET_POST_RE.test((f.status&&f.status.name)||''))
@@ -816,13 +818,24 @@ function processSquad(sq, nodes, report){
   // José 37 SP na matriz × 26 SP no Dev/QA) e inflava a média final. Corrigido em 03/08/2026.
   const mkDev0=nm=>devMap[nm]=devMap[nm]||{name:nm,n:0,dn:0,sp:0,dsp:0,isp:0,tsp:0,noSP:0,histSP:0,histN:0,part:new Set(),by:{},rejCode:0,rejQA:0,baseQA:0,baseCR:0};
   const liveSubs=r=>(r.subs||[]).filter(s=>!(s.c==='done'&&/cancel|discard|descart/i.test(s.s||'')));
+  // Porção DEV de um card SEM subtarefas. Fonte primária: o campo "Story point dev" (10548), que a
+  // squad preenche na refinement junto com o "Story point QA" — as duas parcelas são estimadas, não
+  // derivadas. Antes calculávamos total − QA, o que zerava a parcela de dev sempre que o TOTAL não
+  // tinha sido atualizado depois de somar o QA (AE-245: total 1 / QA 1 / dev 1 → dava 0 SP e o card
+  // sumia da linha do Victor; na INF isso escondia 23 SP de dev). A subtração só entra como fallback
+  // quando o campo dev está vazio (16 cards hoje), e devolve null quando nem o total foi estimado.
+  const devPortion=r=>{
+    if(typeof r.spdev==='number') return r.spdev;
+    if(r.spNull) return null;
+    return Math.max(0,(r.sp||0)-(r.spqa||0));
+  };
   for(const r of recs){
     if(r.cancelled) continue;
     const subs=liveSubs(r);
     // unidades de trabalho da história: subtarefas (dev) ou, sem elas, a porção dev do próprio card
     const units=subs.length
       ? subs.map(s=>({who:s.assignee||r.assignee||'Sem responsável', sp:(typeof s.sp==='number'?s.sp:0), done:s.c==='done'}))
-      : [{who:r.assignee||'Sem responsável', sp:Math.max(0,(r.sp||0)-(r.spqa||0)), done:r.cat==='done'}];
+      : [{who:r.assignee||'Sem responsável', sp:(devPortion(r)||0), done:r.cat==='done'}];
     for(const u of units){
       const d=mkDev0(u.who);
       for(const sid of r.ids){
@@ -856,8 +869,7 @@ function processSquad(sq, nodes, report){
       if(live.length){
         for(const s of live) addCur(s.assignee||r.assignee||'Sem responsável', s.sp, s.c);
       } else {
-        const devSP = r.spNull ? null : ((r.sp||0)-(r.spqa||0));
-        addCur(r.assignee||'Sem responsável', devSP, r.cat);
+        addCur(r.assignee||'Sem responsável', devPortion(r), r.cat);
       }
     }
   }
@@ -993,6 +1005,11 @@ function processSquad(sq, nodes, report){
     const noEst=A.filter(r=>r.spNull);
     if(noEst.length) add(C, noEst.length>=4?'warn':'ok',
       '<b>'+pl(noEst.length,'card sem estimativa','cards sem estimativa')+'</b> ('+kl(noEst)+') — fora do escopo e do burndown, então o gráfico não representa a sprint inteira.');
+    // Qualidade da estimativa: card sem subtarefa precisa ter "Story point dev" preenchido, senão a
+    // porção de dev vira o resto da subtração e pode não representar o trabalho real de desenvolvimento.
+    const noDev=A.filter(r=>!(r.subs||[]).length && r.spdev==null && (r.spqa!=null||!r.spNull));
+    if(noDev.length) add(C, noDev.length>=3?'warn':'ok',
+      '<b>'+pl(noDev.length,'card sem "Story point dev"','cards sem "Story point dev"')+'</b> ('+kl(noDev)+') — sem subtarefa e sem a parcela de dev estimada, o painel cai no fallback <em>total − QA</em>, que subestima o dev quando o total não foi atualizado.');
     const noOwn=A.filter(r=>!r.assignee);
     if(noOwn.length) add(C, noOwn.length>=3?'warn':'ok',
       '<b>'+pl(noOwn.length,'card sem responsável','cards sem responsável')+'</b> ('+kl(noOwn)+') — ninguém assumiu, então não há a quem cobrar o andamento.');
@@ -1488,7 +1505,7 @@ function squadDetailHtml(curSquad){
       '</div>';
     html+=reworkHtml;
     html+='<div class="panel"><h2>'+ico('user')+'Desempenho por Dev/QA — '+esc(sprintLabel(a))+'</h2>'+
-      '<p class="panel-sub"><strong>DEV</strong> = SP das <strong>subtarefas</strong> (é onde o trabalho de desenvolvimento está alocado — cada subtarefa com seu próprio responsável e status; a soma das subtarefas = a porção dev da história). Histórias <strong>sem subtarefa</strong> usam a porção dev do próprio card (<em>Story Points total − Story point QA</em>). Subtarefas canceladas são excluídas. A linha <strong>QA</strong> usa o campo <strong>Story point QA</strong> das histórias/tarefas/bugs (atribuído ao QA quando a issue entra nos status de QA; entregue só em DONE). <strong>Mesma regra de busca e exibição nas 3 squads.</strong></p>'+
+      '<p class="panel-sub"><strong>DEV</strong> = SP das <strong>subtarefas</strong> (é onde o trabalho de desenvolvimento está alocado — cada subtarefa com seu próprio responsável e status; a soma das subtarefas = a porção dev da história). Histórias <strong>sem subtarefa</strong> usam o campo <strong>Story point dev</strong> do próprio card (e só caem em <em>Story Points total − Story point QA</em> quando esse campo está vazio). Subtarefas canceladas são excluídas. A linha <strong>QA</strong> usa o campo <strong>Story point QA</strong> das histórias/tarefas/bugs (atribuído ao QA quando a issue entra nos status de QA; entregue só em DONE). <strong>Mesma regra de busca e exibição nas 3 squads.</strong></p>'+
       '<div class="table-scroll"><table class="devqa"><thead><tr><th>Dev / QA</th><th>Itens atrib.</th><th>Itens concl.</th><th>SP atribuídos</th><th>SP entregues</th><th>SP em andamento</th><th>SP não iniciados</th><th>Sem SP</th><th>% SP entregue</th><th>↩︎ Ret. QA</th><th>↩︎ Ret. código</th></tr></thead><tbody>'+rowsD+
       '<tr class="total-row"><td class="col-name">TOTAL devs (subtarefas)</td><td>'+totD.n+'</td><td>'+totD.dn+'</td><td>'+fmtSP(totD.sp)+'</td><td>'+fmtSP(totD.dsp)+'</td><td>'+fmtSP(totD.isp)+'</td><td>'+fmtSP(totD.tsp)+'</td><td>'+totD.noSP+'</td>'+
       '<td>'+(totD.sp>0?pct(totD.dsp,totD.sp)+'%':'—')+'</td>'+
@@ -1496,7 +1513,7 @@ function squadDetailHtml(curSquad){
       qaRowHtml+
       '</tbody></table></div>'+
       '<p style="font-size:11px;color:var(--text-disabled);margin:8px 0 0"><strong>↩︎ Ret. QA / Ret. código</strong> = retornos ÷ cards da pessoa que chegaram a cada estágio (0 é ótimo). Na linha de QA aparece a média da squad — o retrabalho que o QA absorve.</p>'+
-      (qaRowHtml?'<p style="font-size:11px;color:var(--text-disabled);margin:8px 0 0">'+ico('flask',13)+' A linha de QA é complementar (não soma no TOTAL devs). <strong>DEV</strong> = pontos alocados nas <strong>subtarefas</strong> (trabalho de desenvolvimento); <strong>QA</strong> = <strong>Story point QA</strong> das histórias, contabilizado quando a issue entra no fluxo de QA. São partes do mesmo Story Points (total = DEV + QA), medidas na granularidade real de cada uma — por isso podem não fechar exatamente com o escopo do card (subtarefas têm estimativa própria e o QA só entra ao chegar no fluxo de QA).</p>':'')+
+      (qaRowHtml?'<p style="font-size:11px;color:var(--text-disabled);margin:8px 0 0">'+ico('flask',13)+' A linha de QA é complementar (não soma no TOTAL devs). <strong>DEV</strong> = pontos alocados nas <strong>subtarefas</strong> (ou o <strong>Story point dev</strong> do card, quando não há subtarefa); <strong>QA</strong> = <strong>Story point QA</strong> das histórias, contabilizado quando a issue entra no fluxo de QA. São partes do mesmo Story Points (total = DEV + QA), medidas na granularidade real de cada uma — por isso podem não fechar exatamente com o escopo do card (subtarefas têm estimativa própria e o QA só entra ao chegar no fluxo de QA).</p>':'')+
       '</div>';
     // Matriz Dev/QA × Sprint: entregas (e alocação) por sprint + média final
     const realS=list.filter(s=>!String(s.id).startsWith('bl-'));
@@ -1508,7 +1525,7 @@ function squadDetailHtml(curSquad){
     };
     const avgCell=v=>'<td style="white-space:nowrap;background:rgba(78,203,113,.06)"><strong>'+fmtSP(Math.round(v.avgSP*100)/100)+' SP</strong> · '+(Math.round(v.avgN*10)/10)+' tarefas<br><small style="color:var(--text-secondary)">'+v.partN+' sprint(s) fechada(s)</small></td>';
     html+='<div class="panel"><h2>'+ico('bars')+'Entregas por Dev/QA × Sprint</h2>'+
-      '<p class="panel-sub">Por sprint: <strong style="color:var(--verde)">entregue</strong> (SP · tarefas, atribuído à sprint em que a issue foi concluída) e, abaixo, o alocado. Devs em SP totais (Story Points = DEV + QA); linha de QA em <strong>Story point QA</strong> — atribuída ao QA quando a issue entra nos status de QA, entregue só quando chega a DONE. <strong>Média final</strong> = entregue ÷ '+closedCnt+' sprints fechadas em que participou — recalcula ao vivo quando cada sprint encerra (a atual entra ao fechar).</p>'+
+      '<p class="panel-sub">Por sprint: <strong style="color:var(--verde)">entregue</strong> (SP · tarefas, atribuído à sprint em que a issue foi concluída) e, abaixo, o alocado. Devs na <strong>parcela de DEV</strong> (subtarefas, ou o campo <em>Story point dev</em> nos cards sem subtarefa) — por isso o número é menor que o badge do backlog, que mostra o <em>Story Points total</em> = DEV + QA; linha de QA em <strong>Story point QA</strong> — atribuída ao QA quando a issue entra nos status de QA, entregue só quando chega a DONE. <strong>Média final</strong> = entregue ÷ '+closedCnt+' sprints fechadas em que participou — recalcula ao vivo quando cada sprint encerra (a atual entra ao fechar).</p>'+
       '<div class="table-scroll" data-scroll-end="1"><table class="wide-sprints"><thead><tr><th>Dev / QA</th>'+realS.map(s=>'<th>'+esc(sprintLabel(s))+(s.state==='active'?' <span class="t-now">atual</span>':'')+'</th>').join('')+'<th>Média final /sprint</th></tr></thead><tbody>'+
       d.devs.map(v=>'<tr><td title="'+esc(v.name)+'"'+(v.name==='Sem responsável'?' style="color:var(--text-disabled);font-style:italic"':' style="font-weight:600"')+'>'+esc(shortName(v.name))+'</td>'+
         realS.map(s=>cellD(v,s)).join('')+avgCell(v)+'</tr>').join('')+
@@ -1559,7 +1576,7 @@ async function boot(){
       :(LIVE_ENDPOINT
         ?ico('alert',13)+' Proxy indisponível — último snapshot '+gen+' · <a href="'+ACTIONS_URL+'" target="_blank">ver execuções</a>'
         :'Último snapshot '+gen+' · <a href="'+ACTIONS_URL+'" target="_blank">ver execuções</a>');
-    document.getElementById('footer').innerHTML='<strong>Método (precisão):</strong> JQL <code>project = X AND sprint is not EMPTY AND issuetype NOT IN subtaskIssueTypes()</code> · SP = campo <strong>Story Points</strong> (customfield_10028), que <strong>já é a somatória DEV + QA</strong> da história/tarefa/bug (validado: Story Points = Story point total (dev, cf 10548) + Story point QA (cf 10546)), somados por status category, sem subtarefas nas 4 squads. <strong>Testamos usar o endpoint “oficial” de relatório de sprint do Jira como fonte única e revertemos</strong>: ele usa uma foto desatualizada dos pontos (mesma fonte do Burndown nativo) e chegou a mostrar a AE com 1,25 SP concluído quando o real era 64+ — por isso o cálculo ao vivo via JQL abaixo continua sendo a fonte da verdade (já bate com o widget “Progresso do sprint” do Jira). Linha QA do Desempenho por Dev/QA: campo <strong>Story point QA</strong> — a issue é atribuída ao QA quando entra nos status de QA (PENDING QA = não iniciado; ON TESTING/ON GOING QA · QA VERIFIED/APPROVED BY QA · QA DENIED/REJECTED BY QA = em andamento); entregue só em DONE; issues em dev não contam para o QA. <strong>Issues em statuses CANCEL (categoria “done” no Jira) são excluídas do scope e nunca contam como entrega</strong>. Sprints <strong>fechadas</strong> usam baselines oficiais dos reports validados (badges lidos na época); valores sem baseline aparecem com “≈” (reconstruídos). Boards: AE 479 · EE 475 · INF 476 · OE 474. O botão <strong>Atualizar</strong> (no topo) consulta o Jira agora mesmo em tempo real (proxy serverless, sem exigir login de quem acessa); se o proxy não estiver configurado, mostra o último snapshot gerado pelo workflow Update data (fallback horário).';
+    document.getElementById('footer').innerHTML='<strong>Método (precisão):</strong> JQL <code>project = X AND sprint is not EMPTY AND issuetype NOT IN subtaskIssueTypes()</code> · SP = campo <strong>Story Points</strong> (customfield_10028), que <strong>já é a somatória DEV + QA</strong> da história/tarefa/bug (revalidado em 12/08/2026: Story Points = <strong>Story point dev</strong> (cf 10548) + Story point QA (cf 10546) em 137 de 146 cards com os três campos). A <strong>parcela de dev</strong> por pessoa vem das subtarefas ou, em cards sem subtarefa, do campo <strong>Story point dev</strong> lido direto — não da subtração <em>total − QA</em>, que zerava o dev nos cards em que o total não foi atualizado depois de somar o QA, somados por status category, sem subtarefas nas 4 squads. <strong>Testamos usar o endpoint “oficial” de relatório de sprint do Jira como fonte única e revertemos</strong>: ele usa uma foto desatualizada dos pontos (mesma fonte do Burndown nativo) e chegou a mostrar a AE com 1,25 SP concluído quando o real era 64+ — por isso o cálculo ao vivo via JQL abaixo continua sendo a fonte da verdade (já bate com o widget “Progresso do sprint” do Jira). Linha QA do Desempenho por Dev/QA: campo <strong>Story point QA</strong> — a issue é atribuída ao QA quando entra nos status de QA (PENDING QA = não iniciado; ON TESTING/ON GOING QA · QA VERIFIED/APPROVED BY QA · QA DENIED/REJECTED BY QA = em andamento); entregue só em DONE; issues em dev não contam para o QA. <strong>Issues em statuses CANCEL (categoria “done” no Jira) são excluídas do scope e nunca contam como entrega</strong>. Sprints <strong>fechadas</strong> usam baselines oficiais dos reports validados (badges lidos na época); valores sem baseline aparecem com “≈” (reconstruídos). Boards: AE 479 · EE 475 · INF 476 · OE 474. O botão <strong>Atualizar</strong> (no topo) consulta o Jira agora mesmo em tempo real (proxy serverless, sem exigir login de quem acessa); se o proxy não estiver configurado, mostra o último snapshot gerado pelo workflow Update data (fallback horário).';
     renderAll();
   }catch(e){
     console.error('[weekly-hub] load error',e);
