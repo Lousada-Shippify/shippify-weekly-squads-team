@@ -19,10 +19,14 @@
 const JIRA_SITE = 'shippify.atlassian.net';
 const ALLOWED_ORIGIN = 'https://lousada-shippify.github.io';
 
-// Campos de pontos (validados em 17/07/2026 contra OE Sprint 5):
-//   customfield_10028 "Story Points"   = TOTAL da issue (já é a somatória DEV + QA)
-//   customfield_10546 "Story point QA" = parcela de QA
-const FIELDS = ['status', 'customfield_10028', 'customfield_10546', 'customfield_10020', 'resolutiondate', 'summary', 'parent', 'assignee'];
+// Campos de pontos (revalidados em 12/08/2026 contra os 4 boards, 146 cards com os 3 campos):
+//   customfield_10028 "Story Points"    = TOTAL da issue (DEV + QA) — é o badge do backlog
+//   customfield_10546 "Story point QA"  = parcela de QA
+//   customfield_10548 "Story point dev" = parcela de DEV, estimada explicitamente na refinement
+// A relação 10028 = 10548 + 10546 vale em 137/146 cards. Nos 9 restantes o TOTAL ficou igual ao
+// DEV (ninguém somou o QA depois), então derivar dev por subtração zerava trabalho real de dev
+// (ex.: AE-245 total 1 / QA 1 / dev 1 → subtração dava 0). Por isso lemos 10548 direto.
+const FIELDS = ['status', 'customfield_10028', 'customfield_10546', 'customfield_10548', 'customfield_10020', 'resolutiondate', 'summary', 'parent', 'assignee'];
 // Retrabalho por rejeição (changelog): conta quantas vezes a issue ENTROU em cada status abaixo.
 // Nomes reais confirmados no Jira (changelog de OE-140): "CODE REVIEW REJECTED" e "REJECTED BY QA".
 const REJECT_CODE_RE = /CODE\s*REVIEW\s*REJECTED/i;
@@ -227,6 +231,7 @@ function slim(issue, bulk) {
       summary: f.summary || '',
       customfield_10028: typeof f.customfield_10028 === 'number' ? f.customfield_10028 : null,
       customfield_10546: typeof f.customfield_10546 === 'number' ? f.customfield_10546 : null,
+      customfield_10548: typeof f.customfield_10548 === 'number' ? f.customfield_10548 : null,
       resolutiondate: f.resolutiondate || null,
       status: f.status ? { name: f.status.name, statusCategory: { key: f.status.statusCategory?.key || 'new' } } : null,
       customfield_10020: Array.isArray(f.customfield_10020)
