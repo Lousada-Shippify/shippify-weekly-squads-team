@@ -6,9 +6,13 @@
 // 🔄 Atualizar dados, via proxy serverless (Cloudflare Worker) — este script só garante um
 // snapshot recente para quando o proxy ainda não estiver configurado ou estiver fora do ar.
 //
-// Campos de pontos (validados em 17/07/2026):
-//   customfield_10028 "Story Points"   = TOTAL da issue (já é a somatória DEV + QA)
-//   customfield_10546 "Story point QA" = parcela de QA (linha 🧪 QA do Desempenho por Dev/QA)
+// Campos de pontos (revalidados em 12/08/2026 contra os 4 boards, 146 cards com os 3 campos):
+//   customfield_10028 "Story Points"    = TOTAL da issue (DEV + QA) — é o badge do backlog
+//   customfield_10546 "Story point QA"  = parcela de QA (linha 🧪 QA do Desempenho por Dev/QA)
+//   customfield_10548 "Story point dev" = parcela de DEV, estimada explicitamente na refinement
+// 10028 = 10548 + 10546 em 137/146 cards. Nos 9 restantes o TOTAL ficou igual ao DEV (o QA foi
+// somado depois e ninguém atualizou o total), então derivar dev por subtração zerava trabalho
+// real de dev — por isso lemos 10548 direto em vez de calcular 10028 − 10546.
 
 const SITE = process.env.JIRA_SITE || 'shippify.atlassian.net';
 const EMAIL = process.env.JIRA_EMAIL;
@@ -16,7 +20,7 @@ const TOKEN = process.env.JIRA_API_TOKEN;
 if (!EMAIL || !TOKEN) { console.error('Defina os secrets JIRA_EMAIL e JIRA_API_TOKEN'); process.exit(1); }
 
 const AUTH = 'Basic ' + Buffer.from(`${EMAIL}:${TOKEN}`).toString('base64');
-const FIELDS = ['status','customfield_10028','customfield_10546','customfield_10020','resolutiondate','summary','parent','assignee'];
+const FIELDS = ['status','customfield_10028','customfield_10546','customfield_10548','customfield_10020','resolutiondate','summary','parent','assignee'];
 // Retrabalho por rejeição (changelog): conta quantas vezes a issue ENTROU em cada status abaixo.
 // Nomes reais confirmados no Jira (changelog de OE-140): "CODE REVIEW REJECTED" e "REJECTED BY QA".
 const REJECT_CODE_RE = /CODE\s*REVIEW\s*REJECTED/i;
@@ -211,6 +215,7 @@ function slim(issue, bulk) {
       summary: f.summary || '',
       customfield_10028: typeof f.customfield_10028 === 'number' ? f.customfield_10028 : null,
       customfield_10546: typeof f.customfield_10546 === 'number' ? f.customfield_10546 : null,
+      customfield_10548: typeof f.customfield_10548 === 'number' ? f.customfield_10548 : null,
       resolutiondate: f.resolutiondate || null,
       status: f.status ? { name: f.status.name, statusCategory: { key: f.status.statusCategory?.key || 'new' } } : null,
       customfield_10020: Array.isArray(f.customfield_10020)
