@@ -237,6 +237,12 @@
   table.wide-sprints th:first-child,table.wide-sprints td:first-child{position:sticky;left:0;z-index:2;
     background:var(--bg-card);box-shadow:1px 0 0 var(--border)}
   table.wide-sprints tbody td:first-child{background:var(--bg-surface)}
+  /* A linha de QA usa um tint translucido (--qa-row). Na 1a coluna, que e sticky, um fundo
+     translucido deixa as celulas que rolam por baixo aparecerem atraves dela — no tema escuro
+     isso lia como TEXTO SOBREPOSTO no nome do QA (o claro nao mostrava porque la o token e
+     opaco). Aqui o tint e composto sobre uma base opaca: mesma cor da linha, sem vazamento. */
+  table.wide-sprints tbody tr.qa-row td:first-child{background:linear-gradient(var(--qa-row),var(--qa-row)),var(--bg-surface)!important}
+  table.wide-sprints tbody tr.qa-row td:first-child .pill{margin-left:var(--sp-05)}
   table.wide-sprints thead th{white-space:nowrap}
   table.devqa{table-layout:fixed}
   table.devqa th,table.devqa td{width:8%;text-align:center;padding:var(--sp-15) var(--sp-1);vertical-align:middle;overflow-wrap:break-word}
@@ -907,19 +913,30 @@ function processSquad(sq, nodes, report){
   for(const r of recs){
     if(r.cancelled) continue;
     const v=r.spqa;
-    const inQA=QA_PROG_RE.test(r.status), waitQA=QA_WAIT_RE.test(r.status), doneQA=r.cat==='done';
-    const assignedToQA=inQA||waitQA||doneQA;
-    if(assignedToQA && v!=null && v>0){
+    const inQA=QA_PROG_RE.test(r.status), doneQA=r.cat==='done';
+    if(v!=null && v>0){
+      // ALOCADO por sprint = TODO Story point QA das issues da sprint, independente do status —
+      // exatamente a mesma regra da coluna "SP atribuidos" do Desempenho por Dev/QA e da matriz
+      // dos devs (que tambem soma alocacao sem olhar status). Antes so entrava aqui o que ja
+      // tinha chegado ao fluxo de QA (PENDING QA / ON TESTING / DONE), entao a matriz mostrava
+      // MENOS que o Desempenho para a mesma sprint (OE Sprint 7: 24 SP na matriz x 60 SP no
+      // Desempenho; AE 3,5 x 12,5; EE 9 x 24; INF 6 x 25). Corrigido em 18/08/2026.
       for(const sid of r.ids){
         if(closedIds.has(sid)) qa.part.add(sid);
         const bs=qa.by[sid]=qa.by[sid]||{aSP:0,aN:0,dSP:0,dN:0};
         bs.aSP+=v; bs.aN++;
       }
-      if(doneQA&&r.delivSprintId!=null){
-        const bs=qa.by[r.delivSprintId]=qa.by[r.delivSprintId]||{aSP:0,aN:0,dSP:0,dN:0};
-        bs.dSP+=v; bs.dN++;
+      // ENTREGUE continua so em DONE, creditado a sprint em que a issue foi concluida (com
+      // fallback para a ativa quando o Jira nao registrou a sprint de entrega) — igual aos devs.
+      if(doneQA){
+        const target=(r.delivSprintId!=null)?r.delivSprintId
+          :((active&&r.ids.includes(active.id))?active.id:null);
+        if(target!=null){
+          const bs=qa.by[target]=qa.by[target]||{aSP:0,aN:0,dSP:0,dN:0};
+          bs.dSP+=v; bs.dN++;
+        }
+        if(r.delivClosed){ qa.histSP+=v; qa.histN++; }
       }
-      if(doneQA&&r.delivClosed){ qa.histSP+=v; qa.histN++; }
     }
     // SP atribuídos ao QA = TOTAL real de Story point QA alocado em TODAS as histórias/tarefas/bugs
     // da sprint (soma de todos os cf 10546 > 0), independente do status. O breakdown mostra em que
@@ -1534,7 +1551,7 @@ function squadDetailHtml(curSquad){
     };
     const avgCell=v=>'<td style="white-space:nowrap;background:rgba(78,203,113,.06)"><strong>'+fmtSP(Math.round(v.avgSP*100)/100)+' SP</strong> · '+(Math.round(v.avgN*10)/10)+' tarefas<br><small style="color:var(--text-secondary)">'+v.partN+' sprint(s) fechada(s)</small></td>';
     html+='<div class="panel"><h2>'+ico('bars')+'Entregas por Dev/QA × Sprint</h2>'+
-      '<p class="panel-sub">Por sprint: <strong style="color:var(--verde)">entregue</strong> (SP · tarefas, atribuído à sprint em que a issue foi concluída) e, abaixo, o alocado. Devs na <strong>parcela de DEV</strong> (subtarefas, ou o campo <em>Story point dev</em> nos cards sem subtarefa) — por isso o número é menor que o badge do backlog, que mostra o <em>Story Points total</em> = DEV + QA; linha de QA em <strong>Story point QA</strong> — atribuída ao QA quando a issue entra nos status de QA, entregue só quando chega a DONE. <strong>Média final</strong> = entregue ÷ '+closedCnt+' sprints fechadas em que participou — recalcula ao vivo quando cada sprint encerra (a atual entra ao fechar).</p>'+
+      '<p class="panel-sub">Por sprint: <strong style="color:var(--verde)">entregue</strong> (SP · tarefas, atribuído à sprint em que a issue foi concluída) e, abaixo, o alocado. Devs na <strong>parcela de DEV</strong> (subtarefas, ou o campo <em>Story point dev</em> nos cards sem subtarefa) — por isso o número é menor que o badge do backlog, que mostra o <em>Story Points total</em> = DEV + QA; linha de QA em <strong>Story point QA</strong> — <strong>alocado</strong> = todo Story point QA das issues da sprint (mesmo número da coluna <em>SP atribuídos</em> em Desempenho por Dev/QA), <strong>entregue</strong> só quando a issue chega a DONE. <strong>Média final</strong> = entregue ÷ '+closedCnt+' sprints fechadas em que participou — recalcula ao vivo quando cada sprint encerra (a atual entra ao fechar).</p>'+
       '<div class="table-scroll" data-scroll-end="1"><table class="wide-sprints"><thead><tr><th>Dev / QA</th>'+realS.map(s=>'<th>'+esc(sprintLabel(s))+(s.state==='active'?' <span class="t-now">atual</span>':'')+'</th>').join('')+'<th>Média final /sprint</th></tr></thead><tbody>'+
       d.devs.map(v=>'<tr><td title="'+esc(v.name)+'"'+(v.name==='Sem responsável'?' style="color:var(--text-disabled);font-style:italic"':' style="font-weight:600"')+'>'+esc(shortName(v.name))+'</td>'+
         realS.map(s=>cellD(v,s)).join('')+avgCell(v)+'</tr>').join('')+
