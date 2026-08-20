@@ -43,6 +43,65 @@ const PROJECTS = ['AE', 'OE', 'EE', 'INF'];
 // verdade para Scope/Completed/Remaining SP e % de progresso, pedido em 20/07/2026).
 const BOARD_BY_PROJECT = { AE: 479, OE: 474, EE: 475, INF: 476 };
 
+// ── DEPENDÊNCIAS ENTRE SQUADS (aba Dependências, 20/08/2026) ─────────────────────
+// Consulta separada das métricas de sprint: as dependências vivem nos links "Action item"
+// e aparecem também em SUBTAREFAS e em cards SEM sprint — que a JQL das squads exclui
+// (project = X AND sprint is not EMPTY AND issuetype NOT IN subtaskIssueTypes()). Por isso
+// esta busca não filtra sprint nem tipo, e inclui o projeto SEC (squad SRG, board 405).
+// Os dois lados de cada link caem no mesmo resultado (a JQL casa pelas duas pontas), então
+// o front consegue ler duedate/sprint do provedor sem uma segunda consulta.
+// Quem entrega × quem espera NÃO é decidido aqui: a direção gravada no Jira é inconsistente
+// e a regra (precedência SRG > INF) vive no front, em processDeps().
+const DEP_PROJECTS = ['AE', 'OE', 'EE', 'INF', 'SEC'];
+const DEP_FIELDS = ['summary', 'status', 'duedate', 'customfield_10020', 'assignee', 'issuetype', 'issuelinks', 'resolutiondate'];
+const DEP_JQL = 'project in (' + DEP_PROJECTS.join(',') + ') AND issueLinkType in ("has action item","action item from") ORDER BY key ASC';
+
+function slimDep(issue) {
+  const f = issue.fields || {};
+  return {
+    key: issue.key,
+    summary: f.summary || '',
+    duedate: f.duedate || null,
+    resolutiondate: f.resolutiondate || null,
+    type: f.issuetype?.name || '',
+    assignee: f.assignee?.displayName || null,
+    status: f.status ? { name: f.status.name, cat: f.status.statusCategory?.key || 'new' } : null,
+    sprints: Array.isArray(f.customfield_10020)
+      ? f.customfield_10020.map(s => ({ name: s.name, state: s.state, startDate: s.startDate || null, endDate: s.endDate || null }))
+      : null,
+    links: (f.issuelinks || []).map(l => {
+      const other = l.outwardIssue || l.inwardIssue;
+      if (!other) return null;
+      const st = other.fields?.status;
+      return {
+        type: l.type?.name || '',
+        dir: l.outwardIssue ? 'out' : 'in',
+        key: other.key,
+        summary: other.fields?.summary || '',
+        status: st ? { name: st.name, cat: st.statusCategory?.key || 'new' } : null,
+      };
+    }).filter(Boolean),
+  };
+}
+
+async function fetchDeps(auth) {
+  try {
+    const out = [];
+    let token = null;
+    for (let i = 0; i < 20; i++) {
+      const body = { jql: DEP_JQL, fields: DEP_FIELDS, maxResults: 100, ...(token ? { nextPageToken: token } : {}) };
+      const d = await jiraPost(auth, '/rest/api/3/search/jql', body);
+      out.push(...(d.issues || []));
+      if (d.isLast === false && d.nextPageToken) token = d.nextPageToken; else break;
+    }
+    return { issues: out.map(slimDep) };
+  } catch (e) {
+    // Falha aqui não pode derrubar o payload inteiro: o resto do painel continua no ar e a aba
+    // Dependências mostra o aviso de "bloco deps ainda não chegou".
+    return { issues: [], error: String(e.message || e) };
+  }
+}
+
 function corsHeaders(origin) {
   return {
     'Access-Control-Allow-Origin': origin === ALLOWED_ORIGIN ? origin : ALLOWED_ORIGIN,
@@ -267,6 +326,8 @@ export default {
       const auth = 'Basic ' + btoa(`${env.JIRA_EMAIL}:${env.JIRA_API_TOKEN}`);
       const squads = {};
       const sprintReport = {};
+      // Dependências (links Action item): dispara em paralelo com as squads e é aguardada no fim.
+      const depsP = fetchDeps(auth);
       // As 4 squads são independentes → rodam EM PARALELO (antes era um laço sequencial e o tempo
       // total somava: com INF + subtarefas de todas as sprints passou de 18s e começou a estourar
       // o timeout de 25s do front, caindo pro snapshot. Dentro de cada squad, subtarefas/changelog/
@@ -286,7 +347,8 @@ export default {
         squads[p] = issues.map(i => { const o = slim(i, bulk); o.subs = subByParent[i.key] || []; return o; });
         sprintReport[p] = report;
       }));
-      const data = { generatedAt: new Date().toISOString(), squads, sprintReport, live: true };
+      const deps = await depsP;
+      const data = { generatedAt: new Date().toISOString(), squads, sprintReport, deps, live: true };
       return new Response(JSON.stringify(data), {
         headers: { ...corsHeaders(origin), 'Content-Type': 'application/json' },
       });
