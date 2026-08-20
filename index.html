@@ -1169,7 +1169,19 @@ async function loadAll(){
   window.__LIVE__=live;
   const results={};
   for(const sq of SQUADS){ results[sq.code]=processSquad(sq,(raw.squads&&raw.squads[sq.code])||[],(raw.sprintReport&&raw.sprintReport[sq.code])||null); }
-  DEPS=processDeps(raw.deps);   // null quando a fonte ainda não traz o bloco deps
+  // Dependências: se o payload em tempo real ainda não traz o bloco deps (Worker publicado numa
+  // versão anterior), busca SÓ as dependências no snapshot do repo — assim a aba já funciona antes
+  // do paste no Cloudflare, e as métricas das squads seguem 100% ao vivo.
+  let depsRaw=raw.deps||null;
+  window.__DEPSRC__=depsRaw?(live?'live':'fallback'):null;   // 'snapshot' = proxy vivo, mas sem deps
+  if(live&&!depsRaw){
+    try{
+      const r=await fetch('data.json?v='+Date.now(),{cache:'no-store'});
+      if(r.ok){ const snap=await r.json(); depsRaw=snap.deps||null;
+        if(depsRaw){ window.__DEPSRC__='snapshot'; window.__DEPGEN__=snap.generatedAt; } }
+    }catch(e){}
+  }
+  DEPS=processDeps(depsRaw);   // null quando nem o proxy nem o snapshot trazem o bloco deps
   return results;
 }
 
@@ -1780,6 +1792,7 @@ function depsBodyHtml(){
   let html='<div class="panel"><h2>'+ico('loop')+'Panorama'+
     '<span class="pill '+(c.late?'red':(c.blocking?'yellow':'green'))+'">'+c.blocking+' bloqueio'+(c.blocking===1?'':'s')+' ativo'+(c.blocking===1?'':'s')+'</span></h2>'+
     '<p class="panel-sub">Tarefas das squads que só fecham depois de uma ação de <strong>INF</strong> ou <strong>SRG</strong>, lidas dos links <strong>Action item</strong> do Jira. Quem entrega é definido por precedência de projeto (SRG entrega para todos; INF entrega para AE/EE/OE) — a direção crua do link aparece em cada linha, porque no Jira ela está gravada nos dois sentidos. <strong>Bloqueio ativo</strong> = provedor ainda não entregou <em>e</em> o card que espera continua aberto.</p>'+
+    (window.__DEPSRC__==='snapshot'?'<p class="panel-sub">'+ico('alert',13)+' Os vínculos desta aba vêm do <strong>snapshot horário</strong>'+(window.__DEPGEN__?' ('+new Date(window.__DEPGEN__).toLocaleString('pt-BR')+')':'')+': o proxy em tempo real ainda roda a versão anterior do Worker, sem o bloco <code>deps</code>. As métricas das squads acima continuam ao vivo.</p>':'')+
     '<div class="kpi-grid">'+
       kpi('Bloqueios ativos', String(c.blocking), c.total+' pares no histórico')+
       kpi('Squads bloqueadas', String(c.squadsBlocked)+'<span style="font-size:var(--fs-cap)">/'+DEP_WAITERS.length+'</span>', 'aguardando INF ou SRG')+
