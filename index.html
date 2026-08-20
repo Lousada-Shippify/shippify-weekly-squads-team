@@ -343,6 +343,41 @@
   .t-now{color:var(--ico-accent);font-weight:700}
   .num{font-family:var(--font-display);font-variant-numeric:tabular-nums}
   .micro{font-size:var(--fs-label);line-height:1.3}
+  /* ── Aba Dependências (20/08/2026) ─────────────────────────────────────────────
+     Gantt em CSS puro (sem Chart.js): as barras são divs posicionadas em % dentro de
+     .dep-tl, então seguem os tokens do tema e imprimem junto com a página. */
+  .dep-toolbar{display:flex;align-items:center;gap:var(--sp-1);flex-wrap:wrap;margin:0 0 var(--sp-2)}
+  .dep-toolbar button{font-family:var(--font-display);font-size:var(--fs-label);font-weight:600;
+    background:transparent;color:var(--text-secondary);border:1px solid var(--border);
+    border-radius:var(--r-pill);padding:var(--sp-05) var(--sp-15);cursor:pointer;
+    transition:color var(--dur-fast) var(--ease-out),border-color var(--dur-fast) var(--ease-out)}
+  .dep-toolbar button:hover{color:var(--text-primary);border-color:var(--text-disabled)}
+  .dep-toolbar button.active{background:var(--fill-turquesa);color:var(--turquesa);border-color:var(--turquesa)}
+  .dep-prov{border:1px solid var(--border);border-radius:var(--r-md);padding:var(--sp-15);
+    margin-bottom:var(--sp-15);background:var(--fill-subtle)}
+  .dep-prov-head{display:flex;align-items:center;gap:var(--sp-1);flex-wrap:wrap;margin-bottom:var(--sp-05)}
+  .dep-prov-head .k{font-family:var(--font-display);font-weight:700}
+  .dep-wait-list{display:flex;flex-direction:column;gap:var(--sp-05);margin-top:var(--sp-1);
+    padding-left:var(--sp-15);border-left:2px solid var(--border)}
+  .dep-wait{font-size:var(--fs-cap);display:flex;align-items:center;gap:var(--sp-1);flex-wrap:wrap}
+  .dep-gantt{display:flex;flex-direction:column;gap:var(--sp-1)}
+  .dep-row{display:grid;grid-template-columns:230px 1fr;gap:var(--sp-15);align-items:center}
+  .dep-row .lbl{font-size:var(--fs-cap);line-height:1.3}
+  .dep-tl{position:relative;height:26px;background:var(--fill-subtle);border:1px solid var(--border);border-radius:var(--r-sm)}
+  .dep-tl .tick{position:absolute;top:0;bottom:0;width:1px;background:var(--grid-line)}
+  .dep-tl .today{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--pulso);opacity:.9}
+  .dep-bar{position:absolute;top:5px;height:16px;border-radius:var(--r-sm);background:var(--fill-turquesa);
+    border:1px solid var(--turquesa);display:flex;align-items:center;justify-content:flex-end;
+    padding:0 var(--sp-05);font-family:var(--font-display);font-size:10px;color:var(--turquesa);
+    overflow:hidden;white-space:nowrap}
+  .dep-bar.late{background:var(--fill-magenta);border-color:var(--magenta-text);color:var(--magenta-text);
+    justify-content:flex-start}
+  .dep-bar.est{border-style:dashed}
+  .dep-axis{display:grid;grid-template-columns:230px 1fr;gap:var(--sp-15);margin-top:var(--sp-05)}
+  .dep-axis .scale{position:relative;height:14px}
+  .dep-axis .scale span{position:absolute;transform:translateX(-50%);font-size:10px;
+    color:var(--text-disabled);white-space:nowrap}
+  @media(max-width:760px){.dep-row,.dep-axis{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -1134,6 +1169,7 @@ async function loadAll(){
   window.__LIVE__=live;
   const results={};
   for(const sq of SQUADS){ results[sq.code]=processSquad(sq,(raw.squads&&raw.squads[sq.code])||[],(raw.sprintReport&&raw.sprintReport[sq.code])||null); }
+  DEPS=processDeps(raw.deps);   // null quando a fonte ainda não traz o bloco deps
   return results;
 }
 
@@ -1295,18 +1331,21 @@ function renderAll(){
       squadPlanHtml(sq)+squadDetailHtml(sq.code)+
     '</section>';
   }
+  html+=depsSectionHtml();   // última aba: dependências entre squads
   el.innerHTML=html;
   for(const sq of SQUADS){ drawBurndown(sq); drawVelocity(sq.code); }
   // Tabelas com sprints em coluna abrem já roladas até o fim (sprint atual à vista)
   el.querySelectorAll('.table-scroll[data-scroll-end]').forEach(w=>{ w.scrollLeft=w.scrollWidth; });
   renderSquadNav();
+  wireDeps();
 }
 // Botões de squad no header fixo: rolam até a seção (não trocam de view)
 function renderSquadNav(){
   const t=document.getElementById('squadNav'); if(!t) return;
   // 1b: sigla em negrito + nome completo em peso normal (o "·" saiu — a diferença de peso já
   // separa os dois, e o ponto virava ruído repetido 4 vezes no trilho).
-  t.innerHTML=SQUADS.map(s=>'<button data-sq="'+s.code+'">'+s.code+' <span class="sq-name">'+esc(s.name)+'</span></button>').join('');
+  t.innerHTML=SQUADS.map(s=>'<button data-sq="'+s.code+'">'+s.code+' <span class="sq-name">'+esc(s.name)+'</span></button>').join('')+
+    '<button data-sq="DEP">DEP <span class="sq-name">Dependências</span></button>';
   t.querySelectorAll('button').forEach(b=>b.onclick=()=>{
     const sec=document.getElementById('sq-'+b.dataset.sq);
     if(sec) sec.scrollIntoView({behavior:'smooth',block:'start'});
@@ -1323,7 +1362,7 @@ function renderSquadNav(){
   }
   if(window.__navObs__){
     window.__navObs__.disconnect();
-    SQUADS.forEach(s=>{const el2=document.getElementById('sq-'+s.code); if(el2) window.__navObs__.observe(el2);});
+    SQUADS.map(s=>s.code).concat(['DEP']).forEach(c=>{const el2=document.getElementById('sq-'+c); if(el2) window.__navObs__.observe(el2);});
   }
 }
 function kpi(l,v,d,variant){
@@ -1582,6 +1621,294 @@ function drawVelocity(code){
     {label:'Delivered SP',data:list.map(s=>s.state==='active'?s.doneSP:s.delivered),backgroundColor:DS.seriesDeliv,borderColor:DS.verde,borderWidth:1}
   ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:DS.textSec,font:{size:11}}}},
     scales:{x:{ticks:{color:DS.textDim},grid:{display:false}},y:{beginAtZero:true,ticks:{color:DS.textDim},grid:{color:DS.gridLine}}}}}));
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════════
+   ABA DEPENDÊNCIAS (20/08/2026) — quem espera ação de INF / SRG
+
+   REGRA DE LEITURA (definida com Vitor em 20/08/2026): a direção literal do link
+   "Action item" no Jira NÃO é confiável — o mesmo tipo aparece gravado nos dois
+   sentidos (AE-290 → SEC-184, INF-131 → SEC-189, mas INF-125 ← INFRA-2470). Então
+   quem ENTREGA é definido por PRECEDÊNCIA DE PROJETO: SRG (projeto SEC) entrega para
+   todos; INF entrega para AE/EE/OE. O outro lado do par é quem ESPERA. Pares sem
+   provedor INF/SRG, ou cujo lado que espera não é uma das 4 squads, ficam fora do
+   recorte (o total aparece na nota de método, para não sumir silenciosamente).
+   A direção crua do Jira é exibida em cada linha para auditoria dos cards.
+
+   ETA (quando a tarefa volta para a squad que espera): duedate do card provedor; se
+   não houver, a data final da sprint dele, marcada com "≈" (estimativa); sem as duas,
+   entra em "sem previsão". Regra escolhida porque hoje quase nenhum card tem duedate.
+
+   Tipos de link considerados: só "Action item" por enquanto — DEP_LINK_RE aceita mais
+   tipos (ex.: /action\s*item|blocks/i) quando Vitor mandar a lista completa. */
+const DEP_LINK_RE = /action\s*item/i;
+const DEP_SQUAD_BY_PROJECT = {AE:'AE', EE:'EE', OE:'OE', INF:'INF', SEC:'SRG'};
+const DEP_RANK = {SRG:2, INF:1};          // precedência de provedor: SRG > INF
+const DEP_WAITERS = ['AE','EE','OE','INF'];
+const DEP_PROVIDERS = [
+  {code:'SRG', name:'SRG — Security, Reliability & Governance', project:'SEC', board:405},
+  {code:'INF', name:'Infrastructure',                           project:'INF', board:476},
+];
+const DEP_SQUAD_NAME = {AE:'Apps Experience', EE:'Ecosystem Experience', OE:'Operation Experience',
+                        INF:'Infrastructure', SRG:'SRG'};
+let DEPS = null;            // saída de processDeps
+let DEP_VIEW = 'open';      // 'open' (padrão — só o que ainda bloqueia) | 'all' (histórico)
+
+const depToday = () => { const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
+const depDate  = iso => iso ? new Date(iso+'T00:00:00') : null;
+const depDdmm  = iso => iso ? ddmm(depDate(iso)) : '—';
+const depDays  = (a,b) => Math.round((depDate(b)-depDate(a))/86400000);
+const depIssueUrl = k => 'https://shippify.atlassian.net/browse/'+k;
+// Pill de status do card, na mesma paleta usada no resto do painel
+function depStatusPill(cat, name){
+  const cls = cat==='done' ? 'green' : (cat==='indeterminate' ? 'yellow' : 'gray');
+  return '<span class="pill '+cls+'">'+esc(stLabel(name))+'</span>';
+}
+
+// Um lado do par. 'full' = a issue completa (veio na consulta de dependências, com duedate e
+// sprint); 'stub' = só o que o próprio link carrega (resumo + status), usado quando o card está
+// num projeto fora do recorte da consulta. partial:true sinaliza que não há duedate/sprint.
+function depSide(key, full, stub, squad){
+  const st = full ? full.status : (stub ? stub.status : null);
+  const spr = (full && Array.isArray(full.sprints)) ? full.sprints.filter(Boolean) : [];
+  const act = spr.filter(s=>s.state==='active')[0] || spr[spr.length-1] || null;
+  return {
+    key, squad: squad||null, project: String(key||'').split('-')[0],
+    summary: (full&&full.summary) || (stub&&stub.summary) || '',
+    status: (st&&st.name) || '—', cat: (st&&st.cat) || 'new',
+    assignee: (full&&full.assignee) || null,
+    type: (full&&full.type) || '',
+    sprint: act ? act.name : null,
+    sprintEnd: (act&&act.endDate) ? String(act.endDate).slice(0,10) : null,
+    duedate: (full&&full.duedate) ? String(full.duedate).slice(0,10) : null,
+    resolved: (full&&full.resolutiondate) ? String(full.resolutiondate).slice(0,10) : null,
+    partial: !full,
+  };
+}
+// ETA = data em que a tarefa deve voltar para quem espera. duedate > fim da sprint (≈) > nada.
+function depEta(full){
+  if(!full) return {date:null, src:null};
+  if(full.duedate) return {date:String(full.duedate).slice(0,10), src:'duedate'};
+  const spr=(Array.isArray(full.sprints)?full.sprints:[]).filter(s=>s&&s.endDate);
+  if(spr.length){
+    const s = spr.filter(x=>x.state==='active')[0] || spr[spr.length-1];
+    return {date:String(s.endDate).slice(0,10), src:'sprint', sprint:s.name};
+  }
+  return {date:null, src:null};
+}
+
+function processDeps(raw){
+  const issues = (raw && Array.isArray(raw.issues)) ? raw.issues : null;
+  if(!issues) return null;                     // payload antigo (Worker/data.json sem o bloco deps)
+  const byKey={}; issues.forEach(i=>{ if(i&&i.key) byKey[i.key]=i; });
+  const squadOf = k => DEP_SQUAD_BY_PROJECT[String(k||'').split('-')[0]] || null;
+  const rank = s => DEP_RANK[s] || 0;
+  const seen=new Set(); const pairs=[]; let skipped=0; const skippedBy={};
+  const bump=(a,b)=>{const k=a+' ~ '+b; skippedBy[k]=(skippedBy[k]||0)+1;};
+  for(const iss of issues){
+    for(const l of (iss.links||[])){
+      if(!l || !l.key || !DEP_LINK_RE.test(l.type||'')) continue;
+      const id=[iss.key,l.key].sort().join('~');
+      if(seen.has(id)) continue; seen.add(id);
+      const sA=squadOf(iss.key), sB=squadOf(l.key);
+      let pk,wk,ps,ws;
+      if(rank(sA)>rank(sB)){ pk=iss.key; wk=l.key; ps=sA; ws=sB; }
+      else if(rank(sB)>rank(sA)){ pk=l.key; wk=iss.key; ps=sB; ws=sA; }
+      else { skipped++; bump(String(iss.key).split('-')[0],String(l.key).split('-')[0]); continue; }
+      if(DEP_WAITERS.indexOf(ws)<0){ skipped++; bump(String(wk).split('-')[0],String(pk).split('-')[0]); continue; }
+      const P = byKey[pk]||null, W = byKey[wk]||null;
+      const prov = depSide(pk, P, pk===l.key?l:null, ps);
+      const wait = depSide(wk, W, wk===l.key?l:null, ws);
+      const eta  = depEta(P);
+      const done = prov.cat==='done';
+      const late = !done && !!eta.date && eta.date < depToday();
+      // Direção como está gravada no Jira (para auditar/corrigir os cards)
+      const rawFrom = l.dir==='out' ? iss.key : l.key;
+      const rawTo   = l.dir==='out' ? l.key  : iss.key;
+      const waitDone = wait.cat==='done';
+      // "bloqueando" = o provedor não entregou E o card que espera ainda está aberto. Quando o
+      // card que espera já está concluído (o time achou outro caminho, ou fechou sem a entrega),
+      // o par deixa de ser bloqueio ativo e vira histórico — foi o caso de AE-290 e INF-410/411/412,
+      // todos Concluídos com SEC-184 ainda Em andamento (medido em 20/08/2026).
+      pairs.push({id, prov, wait, eta, done, waitDone, blocking: !done && !waitDone, late: late && !waitDone,
+                  linkType:l.type||'Action item',
+                  rawLabel: rawFrom+' has action item '+rawTo,
+                  rawInverted: rawFrom!==pk});
+    }
+  }
+  // Agrupamentos
+  const byProvider={}; DEP_PROVIDERS.forEach(p=>{byProvider[p.code]={ticket:{}, order:[]};});
+  const byWaiter={};   DEP_WAITERS.forEach(w=>{byWaiter[w]={n:0, open:0, provs:{}, next:null};});
+  for(const p of pairs){
+    const g=byProvider[p.prov.squad]; if(g){
+      if(!g.ticket[p.prov.key]){ g.ticket[p.prov.key]={prov:p.prov, eta:p.eta, done:p.done, late:p.late, blocking:0, waits:[]}; g.order.push(p.prov.key); }
+      g.ticket[p.prov.key].waits.push(p);
+      if(p.blocking) g.ticket[p.prov.key].blocking++;
+    }
+    const w=byWaiter[p.wait.squad]; if(w){
+      w.n++; if(p.blocking){ w.open++; w.provs[p.prov.squad]=(w.provs[p.prov.squad]||0)+1;
+        if(p.eta.date && (!w.next || p.eta.date<w.next)) w.next=p.eta.date; }
+    }
+  }
+  const blocking = pairs.filter(p=>p.blocking);
+  const counts = {
+    total: pairs.length, blocking: blocking.length,
+    released: pairs.filter(p=>p.done).length,
+    noImpact: pairs.filter(p=>!p.done&&p.waitDone).length,
+    withEta: blocking.filter(p=>p.eta.date).length,
+    noEta: blocking.filter(p=>!p.eta.date).length,
+    late: blocking.filter(p=>p.late).length,
+    squadsBlocked: DEP_WAITERS.filter(w=>byWaiter[w].open>0).length,
+    inverted: pairs.filter(p=>p.rawInverted).length,
+    skipped, skippedBy,
+  };
+  return {pairs, byProvider, byWaiter, counts, generatedAt:(raw&&raw.generatedAt)||null};
+}
+
+/* ---------- render da aba ---------- */
+function depsSectionHtml(){
+  return '<section class="squad-section" id="sq-DEP">'+
+    '<h2 class="squad-title"><span class="pill gray">DEP</span> Dependências entre squads</h2>'+
+    '<div id="depBody">'+depsBodyHtml()+'</div>'+
+  '</section>';
+}
+function depsBodyHtml(){
+  if(!DEPS) return '<div class="panel"><h2>'+ico('loop')+'Dependências entre squads</h2>'+
+    '<p class="panel-sub">O bloco <code>deps</code> ainda não chegou nos dados. O front já sabe montar a aba — falta a fonte trazer os links: no <strong>tempo real</strong>, colar o <code>worker.js</code> novo no Cloudflare (Quick edit → Deploy); no <strong>snapshot</strong>, rodar o workflow <em>Update data</em> depois de publicar o <code>build.mjs</code> novo. Enquanto isso esta aba fica em espera, sem afetar o resto do painel.</p></div>';
+  const c=DEPS.counts;
+  const view=DEP_VIEW==='all'?DEPS.pairs:DEPS.pairs.filter(p=>p.blocking);
+  let html='<div class="panel"><h2>'+ico('loop')+'Panorama'+
+    '<span class="pill '+(c.late?'red':(c.blocking?'yellow':'green'))+'">'+c.blocking+' bloqueio'+(c.blocking===1?'':'s')+' ativo'+(c.blocking===1?'':'s')+'</span></h2>'+
+    '<p class="panel-sub">Tarefas das squads que só fecham depois de uma ação de <strong>INF</strong> ou <strong>SRG</strong>, lidas dos links <strong>Action item</strong> do Jira. Quem entrega é definido por precedência de projeto (SRG entrega para todos; INF entrega para AE/EE/OE) — a direção crua do link aparece em cada linha, porque no Jira ela está gravada nos dois sentidos. <strong>Bloqueio ativo</strong> = provedor ainda não entregou <em>e</em> o card que espera continua aberto.</p>'+
+    '<div class="kpi-grid">'+
+      kpi('Bloqueios ativos', String(c.blocking), c.total+' pares no histórico')+
+      kpi('Squads bloqueadas', String(c.squadsBlocked)+'<span style="font-size:var(--fs-cap)">/'+DEP_WAITERS.length+'</span>', 'aguardando INF ou SRG')+
+      kpi('Com data prevista', String(c.withEta), c.noEta+' sem previsão')+
+      kpi('Vencidos', String(c.late), c.late?'data prevista já passou':'nenhuma data no passado', c.late?'crit':null)+
+      kpi('Já liberadas', String(c.released), c.noImpact+' seguiram sem esperar')+
+    '</div></div>';
+  html+='<div class="dep-toolbar"><span class="micro t-sec">Recorte:</span>'+
+    '<button data-depview="open"'+(DEP_VIEW==='open'?' class="active"':'')+'>Bloqueios ativos ('+c.blocking+')</button>'+
+    '<button data-depview="all"'+(DEP_VIEW==='all'?' class="active"':'')+'>Todas, com histórico ('+c.total+')</button></div>';
+  // Visão por squad provedora
+  for(const pv of DEP_PROVIDERS){
+    const g=DEPS.byProvider[pv.code]||{ticket:{},order:[]};
+    const keys=g.order.filter(k=>DEP_VIEW==='all' ? true : g.ticket[k].blocking>0);
+    const openN=g.order.filter(k=>g.ticket[k].blocking>0).length;
+    html+='<div class="panel"><h2>'+ico('box')+'Ação pendente de '+esc(pv.code)+' — '+esc(pv.name)+
+      '<span class="pill '+(openN?'yellow':'green')+'">'+openN+' ticket'+(openN===1?'':'s')+' bloqueando</span></h2>'+
+      '<p class="panel-sub">Cada bloco é um card de '+esc(pv.code)+' (projeto '+esc(pv.project)+'); abaixo dele, quem está esperando por ele. '+
+      '<a href="https://shippify.atlassian.net/jira/software/c/projects/'+esc(pv.project)+'/boards/'+pv.board+'" target="_blank">abrir board '+pv.board+' '+ico('external',12)+'</a></p>';
+    if(!keys.length){ html+='<p class="deliv t-sec">'+ico('check',14)+' Nada pendente deste time no recorte atual.</p>'; }
+    for(const k of keys){
+      const t=g.ticket[k], e=t.eta;
+      const etaTxt = t.done ? ('liberado'+(t.prov.resolved?' em '+depDdmm(t.prov.resolved):''))
+        : (e.date ? (depDdmm(e.date)+(e.src==='sprint'?' <small title="estimativa: fim da sprint '+esc(e.sprint||'')+'">≈</small>':'')) : 'sem previsão');
+      const etaPill = t.done ? '<span class="pill green">'+etaTxt+'</span>'
+        : (e.date ? '<span class="pill '+(t.late?'red':'blue')+'">volta em '+etaTxt+(t.late?' · atrasado '+Math.abs(depDays(e.date,depToday()))+'d':'')+'</span>'
+                  : '<span class="pill gray">sem data prevista</span>');
+      html+='<div class="dep-prov"><div class="dep-prov-head">'+
+        '<a class="k" href="'+depIssueUrl(t.prov.key)+'" target="_blank">'+esc(t.prov.key)+'</a>'+
+        depStatusPill(t.prov.cat,t.prov.status)+etaPill+
+        (t.prov.assignee?'<span class="micro t-sec">'+esc(shortName(t.prov.assignee))+'</span>':'')+
+        (t.prov.sprint?'<span class="micro t-sec">'+esc(t.prov.sprint)+'</span>':'')+
+        '</div><div class="micro t-sec">'+esc(t.prov.summary)+'</div>'+
+        '<div class="dep-wait-list">';
+      for(const p of t.waits.filter(x=>DEP_VIEW==='all'||x.blocking)){
+        html+='<div class="dep-wait"><span class="pill '+(p.wait.squad==='INF'?'purple':'blue')+'">'+esc(p.wait.squad)+'</span>'+
+          '<a href="'+depIssueUrl(p.wait.key)+'" target="_blank"><strong>'+esc(p.wait.key)+'</strong></a>'+
+          '<span>'+esc(p.wait.summary.slice(0,90))+(p.wait.summary.length>90?'…':'')+'</span>'+
+          depStatusPill(p.wait.cat,p.wait.status)+
+          (p.wait.sprint?'<span class="micro t-sec">'+esc(p.wait.sprint)+'</span>':'')+
+          '<span class="micro" style="color:var(--text-disabled)" title="direção como está gravada no Jira">'+esc(p.rawLabel)+'</span>'+
+          '</div>';
+      }
+      html+='</div></div>';
+    }
+    html+='</div>';
+  }
+  // Gantt
+  html+='<div class="panel"><h2>'+ico('clock')+'Quando volta para quem espera</h2>'+
+    '<p class="panel-sub">Barra = tempo até a tarefa do provedor ficar disponível de novo para a squad que aguarda. Data cheia = <strong>duedate</strong> do card; borda tracejada e "≈" = <strong>fim da sprint</strong> do provedor (estimativa). A linha vertical vermelha é hoje; barras em vermelho já passaram da data.</p>'+
+    depGanttHtml(view.filter(p=>p.blocking&&p.eta.date))+'</div>';
+  // Sem previsão
+  const noEta=view.filter(p=>p.blocking&&!p.eta.date);
+  if(noEta.length){
+    html+='<div class="panel"><h2>'+ico('alert')+'Sem data de conclusão sinalizada'+
+      '<span class="pill yellow">'+noEta.length+'</span></h2>'+
+      '<p class="panel-sub">Nem <strong>duedate</strong> nem sprint no card do provedor — não há como dizer quando volta. Preencher a data de conclusão nesses cards é o que coloca cada linha no gráfico acima.</p>'+
+      '<div class="table-scroll"><table><thead><tr><th>Provedor</th><th>Tarefa que entrega</th><th>Status</th><th>Quem espera</th></tr></thead><tbody>'+
+      noEta.map(p=>'<tr><td><span class="pill '+(p.prov.squad==='SRG'?'purple':'blue')+'">'+esc(p.prov.squad)+'</span> <a href="'+depIssueUrl(p.prov.key)+'" target="_blank">'+esc(p.prov.key)+'</a></td>'+
+        '<td>'+esc(p.prov.summary.slice(0,110))+(p.prov.summary.length>110?'…':'')+'</td>'+
+        '<td>'+depStatusPill(p.prov.cat,p.prov.status)+'</td>'+
+        '<td><span class="pill gray">'+esc(p.wait.squad)+'</span> <a href="'+depIssueUrl(p.wait.key)+'" target="_blank">'+esc(p.wait.key)+'</a></td></tr>').join('')+
+      '</tbody></table></div></div>';
+  }
+  // Por squad que espera
+  html+='<div class="panel"><h2>'+ico('user')+'Por squad que aguarda</h2>'+
+    '<p class="panel-sub">Quantas tarefas de cada squad dependem de ação de outro time e qual é a próxima liberação prevista.</p>'+
+    '<table><thead><tr><th>Squad</th><th>Abertas</th><th>Depende de</th><th>Próxima liberação</th><th>Total (histórico)</th></tr></thead><tbody>'+
+    DEP_WAITERS.map(w=>{const v=DEPS.byWaiter[w];
+      const provs=Object.keys(v.provs).map(k=>'<span class="pill '+(k==='SRG'?'purple':'blue')+'">'+esc(k)+' · '+v.provs[k]+'</span>').join(' ')||'—';
+      return '<tr><td><strong>'+esc(w)+'</strong> <span class="micro t-sec">'+esc(DEP_SQUAD_NAME[w]||'')+'</span></td>'+
+        '<td>'+(v.open?'<span class="pill '+(v.open>3?'red':'yellow')+'">'+v.open+'</span>':'<span class="pill green">0</span>')+'</td>'+
+        '<td>'+provs+'</td><td>'+(v.next?depDdmm(v.next):'—')+'</td><td>'+v.n+'</td></tr>';}).join('')+
+    '</tbody></table>'+
+    '<p class="panel-sub" style="margin-top:var(--sp-2)">Método: consulta <code>project in (AE,OE,EE,INF,SEC) AND issueLinkType in ("has action item","action item from")</code>. '+
+    c.total+' pares no recorte'+(c.inverted?', dos quais '+c.inverted+' estão gravados no Jira com o card que ESPERA como origem do link — é por isso que a direção literal não é usada para decidir quem entrega':'')+'. '+
+    (c.skipped?'Outros '+c.skipped+' links Action item ficaram fora: são pares dentro do mesmo projeto ou com projetos que não entram nesta leitura — '+
+      Object.keys(c.skippedBy).sort((a,b)=>c.skippedBy[b]-c.skippedBy[a]).slice(0,8).map(k=>esc(k)+' <strong>'+c.skippedBy[k]+'</strong>').join(' · ')+
+      '. Se quiser QUAL, INFRA, AUT ou MD como provedores/dependentes, é só somar o projeto ao recorte.':'')+'</p>'+
+    '</div>';
+  return html;
+}
+function depGanttHtml(rows){
+  if(!rows.length) return '<p class="deliv t-sec">'+ico('check',14)+' Nenhuma dependência aberta com data de conclusão sinalizada no recorte atual.</p>';
+  const today=depToday();
+  const items=rows.slice().sort((a,b)=>a.eta.date<b.eta.date?-1:(a.eta.date>b.eta.date?1:0));
+  const stamps=items.map(r=>depDate(r.eta.date).getTime()).concat([depDate(today).getTime()]);
+  let min=Math.min.apply(null,stamps), max=Math.max.apply(null,stamps);
+  if(max-min < 14*86400000) max = min + 14*86400000;      // janela mínima de 2 semanas
+  min-=2*86400000; max+=2*86400000;
+  const span=max-min;
+  const pos=iso=>((depDate(iso).getTime()-min)/span)*100;
+  const posMs=ms=>((ms-min)/span)*100;
+  // Ticks e rótulos de segunda-feira
+  let ticks='', labels='';
+  const d0=new Date(min); d0.setHours(0,0,0,0);
+  while(d0.getDay()!==1) d0.setDate(d0.getDate()+1);
+  for(let t=d0.getTime(); t<=max; t+=7*86400000){
+    ticks+='<div class="tick" style="left:'+posMs(t).toFixed(2)+'%"></div>';
+    labels+='<span style="left:'+posMs(t).toFixed(2)+'%">'+ddmm(new Date(t))+'</span>';
+  }
+  const todayLine='<div class="today" style="left:'+pos(today).toFixed(2)+'%" title="hoje"></div>';
+  const bars=items.map(r=>{
+    const late=r.late;
+    const a=late?r.eta.date:today, b=late?today:r.eta.date;
+    const l=pos(a), w=Math.max(pos(b)-l, 1.2);
+    const est=r.eta.src==='sprint';
+    const dias=Math.abs(depDays(today,r.eta.date));
+    const tip=r.prov.key+' → libera '+r.wait.key+' · '+(late?'atrasado ':'em ')+dias+' dia(s) · ETA '+depDdmm(r.eta.date)+(est?' (fim da sprint '+(r.eta.sprint||'')+')':' (duedate)');
+    return '<div class="dep-row">'+
+      '<div class="lbl"><span class="pill '+(r.prov.squad==='SRG'?'purple':'blue')+'">'+esc(r.prov.squad)+'</span> '+
+        '<a href="'+depIssueUrl(r.prov.key)+'" target="_blank"><strong>'+esc(r.prov.key)+'</strong></a>'+
+        '<br><span class="micro t-sec">libera <a href="'+depIssueUrl(r.wait.key)+'" target="_blank">'+esc(r.wait.key)+'</a> ('+esc(r.wait.squad)+')</span></div>'+
+      '<div class="dep-tl">'+ticks+todayLine+
+        '<div class="dep-bar'+(late?' late':'')+(est?' est':'')+'" style="left:'+l.toFixed(2)+'%;width:'+w.toFixed(2)+'%" title="'+esc(tip)+'">'+
+          depDdmm(r.eta.date)+(est?' ≈':'')+'</div>'+
+      '</div></div>';
+  }).join('');
+  return '<div class="dep-gantt">'+bars+'</div>'+
+    '<div class="dep-axis"><div></div><div class="scale">'+labels+'</div></div>';
+}
+// Botões do recorte (abertas × histórico): re-renderizam só o corpo da aba
+function wireDeps(){
+  const b=document.getElementById('depBody'); if(!b) return;
+  b.querySelectorAll('[data-depview]').forEach(btn=>btn.onclick=()=>{
+    DEP_VIEW=btn.dataset.depview;
+    b.innerHTML=depsBodyHtml();
+    wireDeps();
+  });
 }
 
 /* ---------- boot ---------- */
