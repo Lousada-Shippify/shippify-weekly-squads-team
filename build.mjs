@@ -36,6 +36,64 @@ const CR_STAGE_RE = /(CODE\s*REVIEW|PR\s*REVIEW|PULL\s*REQUEST)/i;
 // INF (Infrastructure, board 476) entrou em 28/07/2026 — mesmas métricas das outras squads.
 const PROJECTS = [ ['AE', 479], ['OE', 474], ['EE', 475], ['INF', 476] ];
 
+// ── DEPENDÊNCIAS ENTRE SQUADS (aba Dependências, 20/08/2026) ─────────────────────
+// Consulta separada das métricas de sprint: as dependências vivem nos links "Action item"
+// e aparecem também em SUBTAREFAS e em cards SEM sprint — que a JQL das squads exclui
+// (project = X AND sprint is not EMPTY AND issuetype NOT IN subtaskIssueTypes()). Por isso
+// esta busca não filtra sprint nem tipo, e inclui o projeto SEC (squad SRG, board 405).
+// Os dois lados de cada link caem no mesmo resultado (a JQL casa pelas duas pontas), então
+// o front consegue ler duedate/sprint do provedor sem uma segunda consulta.
+// Quem entrega × quem espera NÃO é decidido aqui: a direção gravada no Jira é inconsistente
+// e a regra (precedência SRG > INF) vive no front, em processDeps().
+const DEP_PROJECTS = ['AE', 'OE', 'EE', 'INF', 'SEC'];
+const DEP_FIELDS = ['summary', 'status', 'duedate', 'customfield_10020', 'assignee', 'issuetype', 'issuelinks', 'resolutiondate'];
+const DEP_JQL = 'project in (' + DEP_PROJECTS.join(',') + ') AND issueLinkType in ("has action item","action item from") ORDER BY key ASC';
+
+function slimDep(issue) {
+  const f = issue.fields || {};
+  return {
+    key: issue.key,
+    summary: f.summary || '',
+    duedate: f.duedate || null,
+    resolutiondate: f.resolutiondate || null,
+    type: f.issuetype?.name || '',
+    assignee: f.assignee?.displayName || null,
+    status: f.status ? { name: f.status.name, cat: f.status.statusCategory?.key || 'new' } : null,
+    sprints: Array.isArray(f.customfield_10020)
+      ? f.customfield_10020.map(s => ({ name: s.name, state: s.state, startDate: s.startDate || null, endDate: s.endDate || null }))
+      : null,
+    links: (f.issuelinks || []).map(l => {
+      const other = l.outwardIssue || l.inwardIssue;
+      if (!other) return null;
+      const st = other.fields?.status;
+      return {
+        type: l.type?.name || '',
+        dir: l.outwardIssue ? 'out' : 'in',
+        key: other.key,
+        summary: other.fields?.summary || '',
+        status: st ? { name: st.name, cat: st.statusCategory?.key || 'new' } : null,
+      };
+    }).filter(Boolean),
+  };
+}
+
+async function fetchDeps() {
+  try {
+    const out = [];
+    let token = null;
+    for (let i = 0; i < 20; i++) {
+      const body = { jql: DEP_JQL, fields: DEP_FIELDS, maxResults: 100, ...(token ? { nextPageToken: token } : {}) };
+      const d = await post('https://' + SITE + '/rest/api/3/search/jql', body);
+      out.push(...(d.issues || []));
+      if (d.isLast === false && d.nextPageToken) token = d.nextPageToken; else break;
+    }
+    return { issues: out.map(slimDep) };
+  } catch (e) {
+    console.warn('deps: consulta de links Action item falhou:', e.message);
+    return { issues: [], error: String(e.message || e) };
+  }
+}
+
 async function post(url, body) {
   const r = await fetch(url, {
     method: 'POST',
@@ -251,6 +309,8 @@ for (const [p, boardId] of PROJECTS) {
   console.log(`${p}: ${issues.length} issues · ${subCount} subtarefas (sprint ativa) · ${totRej} rejeições (changelog ${bulk ? 'completo' : 'truncado — bulkfetch falhou'})` + (sprintReport[p] ? ` · sprint report: ${sprintReport[p].completedSP}/${sprintReport[p].scopeSP} SP` : ''));
 }
 
-const data = { generatedAt: new Date().toISOString(), squads, sprintReport };
+const deps = await fetchDeps();
+console.log('deps: ' + deps.issues.length + ' issues com link Action item em ' + DEP_PROJECTS.join('/') + (deps.error ? ' (erro: ' + deps.error + ')' : ''));
+const data = { generatedAt: new Date().toISOString(), squads, sprintReport, deps };
 await import('node:fs').then(fs => fs.writeFileSync('data.json', JSON.stringify(data)));
 console.log('data.json gerado em', data.generatedAt);
