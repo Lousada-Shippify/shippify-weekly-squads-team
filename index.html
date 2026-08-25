@@ -160,6 +160,22 @@
   .btn-band:hover{color:var(--band-accent);border-color:var(--band-accent)}
   .btn-band:focus-visible{outline:2px solid var(--fluxo);outline-offset:2px}
   .btn-band:disabled{opacity:.4;cursor:default}
+  /* Filtro de sprint — fica colado no "Atualizar" porque as duas ações mudam o que a página
+     mostra: uma troca a FONTE (consulta agora), a outra troca o RECORTE (qual sprint). Mesma
+     altura e mesmo desenho do .btn-band para lerem como um par, não como um controle solto. */
+  .sprint-filter{display:inline-flex;align-items:center;gap:var(--sp-05);height:34px;padding:0 var(--sp-1) 0 var(--sp-15);
+    border:1px solid var(--band-btn-border);border-radius:var(--r-md);color:var(--band-text-sec);
+    font-family:var(--font-display);font-size:var(--fs-sm);font-weight:600;line-height:1;
+    transition:color var(--dur-fast) var(--ease-out),border-color var(--dur-fast) var(--ease-out)}
+  .sprint-filter:hover,.sprint-filter:focus-within{color:var(--band-accent);border-color:var(--band-accent)}
+  .sprint-filter .sf-label{font-size:var(--fs-label);letter-spacing:.04em;text-transform:uppercase;opacity:.7}
+  .sprint-filter select{max-width:240px;border:0;background:transparent;color:inherit;font:inherit;
+    cursor:pointer;padding:0 var(--sp-05);outline:none}
+  .sprint-filter select:disabled{cursor:default}
+  /* o menu nativo abre com as cores do sistema — fixamos o contraste do texto das opções */
+  .sprint-filter select option{color:#111;background:#fff}
+  /* Sprint encerrada em tela: o controle fica em Alerta para o número nunca ser lido como "hoje". */
+  .sprint-filter.past{color:var(--amarelo);border-color:var(--amarelo)}
   .cta-status{font-family:var(--font-body);font-size:var(--fs-cap);line-height:1.5;color:var(--band-text-sec);max-width:340px;text-align:right}
   .cta-status a{color:var(--band-accent);font-weight:600;text-decoration:none}
   .cta-status a:hover{text-decoration:underline}
@@ -397,6 +413,7 @@
       </div>
       <div class="cta">
         <div class="cta-actions">
+          <label class="sprint-filter" title="Filtrar sprint — troca o Overview, o índice de retorno, os KPIs e o bloco de cada squad para a sprint escolhida (offset relativo: cada squad anda na sua própria numeração)"><span class="sf-label">Sprint</span><select id="sprintSel" disabled aria-label="Filtrar sprint"><option value="0">Sprint atual</option></select></label>
           <button class="btn-band" id="btnRefresh" disabled title="Atualizar dados — consulta o Jira agora mesmo (tempo real via proxy), sem exigir login de quem acessa"><span id="icoRefresh"></span>Atualizar</button>
           <button class="btn-band icon-only" id="btnTheme" type="button" title="Alternar entre tema claro e escuro"></button>
         </div>
@@ -528,6 +545,13 @@ const MONTHS_EN = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','
 // sprint que termina amanhã aparecia como "Day 10 of 15", no meio do caminho (10/08/2026).
 const WORKDAYS = 15;
 let DATA = null;
+// Filtro de sprint (controle ao lado de "Atualizar"). 0 = sprint atual de cada squad · N = N sprints
+// atrás. O offset é RELATIVO a cada squad de propósito: elas não andam na mesma numeração (a INF
+// está na Sprint 10 enquanto AE/EE/OE estão na 7), então um filtro por número absoluto não teria
+// correspondente nas quatro. Trocar o valor NÃO reconsulta o Jira — reprocessa RAW, que já está
+// em memória (é o mesmo payload que o "Atualizar" trouxe).
+let SPRINT_OFF = 0;
+let RAW = null;              // último payload cru (tempo real ou snapshot), base do reprocessamento
 let charts = [];
 
 /* Ponte JS ↔ tokens do Design System: Chart.js precisa de cor literal, então lemos os tokens de
@@ -738,12 +762,9 @@ function processSquad(sq, nodes, report){
       subs:Array.isArray(n.subs)?n.subs:[]});
     const rec=recs[recs.length-1];
     for(const s of sorted){ const agg=getS(s); if(cancelled){agg.cancSP+=sp;agg.cancN++;} else {agg.scope+=sp;agg.count++;} }
-    // active-sprint badges (non-subtask issues by status category, cancelled excluded)
-    const act = sorted.find(s=>s.state==='active');
-    if(act && !cancelled){
-      const a=getS(act);
-      if(cat==='done'){a.doneSP+=sp;a.doneN++;} else if(cat==='indeterminate'){a.inprogSP+=sp;a.inprogN++;} else {a.todoSP+=sp;a.todoN++;}
-    }
+    // Os badges por status (todo/inprog/done) saíram daqui em 25/08/2026, quando entrou o filtro de
+    // sprint: eles precisam ser calculados para a sprint SELECIONADA, que pode não ser a ativa — e a
+    // seleção só existe depois que a lista de sprints está montada. Ver fillBuckets(), mais abaixo.
     // delivered attribution for history (cancelled never counts as delivered)
     if(cat==='done' && !cancelled){
       let target=null;
@@ -797,8 +818,51 @@ function processSquad(sq, nodes, report){
       cur.carryByStatus=by;
     }
   }
-  const active=list.find(s=>s.state==='active')||null;
+  // ── SPRINT EXIBIDA (filtro do topo) ──────────────────────────────────────────────────────────
+  // `active` é a sprint que TODA a página mostra: Overview, índice de retorno, KPIs, burndown,
+  // Dev/QA e diagnóstico. Sem filtro é a sprint ativa da squad; com SPRINT_OFF>0 anda N sprints
+  // para trás na linha do tempo DAQUELA squad. Sprints só-baseline (bl-) ficam fora da seleção:
+  // não existem no board, então não têm cards para montar um bloco de squad.
+  const realList=list.filter(s=>!String(s.id).startsWith('bl-'));
+  const actIdx=realList.findIndex(s=>s.state==='active');
+  const baseIdx=actIdx>=0?actIdx:realList.length-1;
+  const active=(SPRINT_OFF>0||actIdx>=0)?(realList[baseIdx-(SPRINT_OFF||0)]||null):null;
+  // Badges por status da sprint mostrada. ATIVA: status de hoje (foto ao vivo do board).
+  // FECHADA: "concluído" é o que foi entregue DENTRO dela (delivSprintId, atribuição por data de
+  // resolução) — ler o status de hoje contaria como entrega da Sprint 6 um card que só fechou na
+  // 7, e toda sprint antiga apareceria com ~100%.
+  const fillBuckets=s=>{
+    const live=s.state==='active';
+    s.todoSP=0;s.inprogSP=0;s.doneSP=0;s.todoN=0;s.inprogN=0;s.doneN=0;
+    for(const r of recs){
+      if(r.cancelled||!r.ids.includes(s.id)) continue;
+      const done=live?(r.cat==='done'):(r.cat==='done'&&r.delivSprintId===s.id);
+      if(done){s.doneSP+=r.sp;s.doneN++;}
+      else if(live&&r.cat==='indeterminate'){s.inprogSP+=r.sp;s.inprogN++;}
+      else {s.todoSP+=r.sp;s.todoN++;}
+    }
+  };
+  // A sprint ATIVA é preenchida sempre, mesmo quando o filtro aponta para outra: Métricas-chave,
+  // Velocity e Carryover mostram a linha do tempo inteira e leem badgeScope/day da coluna "atual".
+  const liveActive=actIdx>=0?realList[actIdx]:null;
+  if(liveActive){
+    fillBuckets(liveActive);
+    liveActive.badgeScope=liveActive.todoSP+liveActive.inprogSP+liveActive.doneSP;
+    liveActive.remaining=liveActive.todoSP+liveActive.inprogSP;
+    liveActive.len=workdaysBetween(liveActive.start,liveActive.end)||WORKDAYS;
+    liveActive.day=workdayIndex(liveActive.start,new Date(),liveActive.len);
+  }
+  if(active&&active!==liveActive) fillBuckets(active);
   if(active){
+    active.past=active.state!=='active';
+    if(active.past&&active.official){
+      // Sprint com baseline oficial (badges lidos na época): os números da época mandam sobre a
+      // reconstrução pelos campos de hoje — é a mesma regra de Métricas-chave.
+      active.doneSP=active.delivered||0; active.doneN=active.doneCount||0;
+      active.todoSP=Math.max(0,(active.scopeUnknown?active.todoSP+active.doneSP:active.scope)-active.doneSP);
+      active.todoN=Math.max(0,(active.issuesTotal||active.count||0)-active.doneN);
+      active.inprogSP=0; active.inprogN=0;
+    }
     active.badgeScope=active.todoSP+active.inprogSP+active.doneSP;
     active.remaining=active.todoSP+active.inprogSP;
     // TESTADO E REVERTIDO (20/07/2026): o endpoint "oficial" de relatório de sprint do Jira
@@ -811,9 +875,13 @@ function processSquad(sq, nodes, report){
     void report;
     // Duração real desta sprint (dias úteis entre start e end do Jira); cai no padrão se faltar data.
     active.len=workdaysBetween(active.start,active.end)||WORKDAYS;
-    active.day=workdayIndex(active.start,new Date(),active.len);
+    // Sprint encerrada: o "dia" é o último. Assim o ideal do burndown e o pill de status passam a
+    // ser medidos contra 100% do prazo — a leitura correta de uma sprint que já acabou.
+    active.day=active.past?active.len:workdayIndex(active.start,new Date(),active.len);
     // Main deliveries: agrupa cards da sprint ativa por épico (parent) ou tag [XXX] do summary
     const acts=recs.filter(r=>!r.cancelled&&r.ids.includes(active.id));
+    // Mesma regra dos badges: em sprint fechada, "concluída" = entregue DENTRO da sprint.
+    const doneIn=r=>active.past?(r.cat==='done'&&r.delivSprintId===active.id):(r.cat==='done');
     const gm={};
     for(const r of acts){
       const tag=(r.summary.match(/^\s*\[([^\]]{2,30})\]/)||[])[1];
@@ -821,11 +889,11 @@ function processSquad(sq, nodes, report){
       const g=gm[k]=gm[k]||{n:0,sp:0,dn:0,dsp:0,inN:0,insp:0,ex:[]};
       g.n++; g.sp+=r.sp;
       if(g.ex.length<2&&r.summary&&!/^\s*\[?refin/i.test(r.summary)) g.ex.push(r.summary);
-      if(r.cat==='done'){g.dn++; g.dsp+=r.sp;}
-      else if(r.cat==='indeterminate'){g.inN++; g.insp+=r.sp;}
+      if(doneIn(r)){g.dn++; g.dsp+=r.sp;}
+      else if(!active.past&&r.cat==='indeterminate'){g.inN++; g.insp+=r.sp;}
     }
     active.deliveries=Object.entries(gm).sort((a,b)=>b[1].sp-a[1].sp);
-    active.doneList=acts.filter(r=>r.cat==='done').map(r=>({key:r.key,summary:r.summary,sp:r.sp}));
+    active.doneList=acts.filter(doneIn).map(r=>({key:r.key,summary:r.summary,sp:r.sp}));
     // Breakdown do trabalho EM ANDAMENTO por status — UNIDADE DE TRABALHO (folha da árvore).
     // Regra: toda subtarefa em andamento conta; o card conta apenas quando NÃO tem nenhuma
     // subtarefa em andamento (não foi quebrado, ou o próprio card é a unidade — PENDING QA,
@@ -837,8 +905,10 @@ function processSquad(sq, nodes, report){
     // simplesmente desaparecia para INF apesar de 10 cards em andamento. Pior: statuses que só
     // existem no nível do card (PENDING QA, BLOCKED, REJECTED BY QA) ficavam invisíveis — AE
     // mostrava 10 unidades quando o board tinha 23 itens em andamento em 5 statuses.
+    // "No que o time está trabalhando AGORA" só faz sentido na sprint ativa — numa sprint fechada
+    // o status de hoje já é o de outra sprint. Por isso o bloco fica vazio (e some da tela).
     const ipLeaf={}; let ipSubN=0, ipCardN=0;
-    for(const r of acts){
+    for(const r of (active.past?[]:acts)){
       const subsIP=(r.subs||[]).filter(s=>s.c==='indeterminate');
       for(const st of subsIP){ ipLeaf[st.s]=(ipLeaf[st.s]||0)+1; ipSubN++; }
       if(r.cat==='indeterminate' && !subsIP.length){ ipLeaf[r.status]=(ipLeaf[r.status]||0)+1; ipCardN++; }
@@ -912,7 +982,7 @@ function processSquad(sq, nodes, report){
   // o trabalho que os devs fazem dentro das subtarefas. QA fica na linha própria (Story point QA).
   const mkDev=nm=>devMap[nm]=devMap[nm]||{name:nm,n:0,dn:0,sp:0,dsp:0,isp:0,tsp:0,noSP:0,histSP:0,histN:0,part:new Set(),by:{},rejCode:0,rejQA:0,baseQA:0,baseCR:0};
   const addCur=(nm,sp,cat)=>{const d=mkDev(nm); d.n++; if(sp==null){d.noSP++;} else {d.sp+=sp; if(cat==='done'){d.dn++;d.dsp+=sp;} else if(cat==='indeterminate'){d.isp+=sp;} else {d.tsp+=sp;}}};
-  if(active){
+  if(active&&!active.past){
     for(const r of recs){
       if(r.cancelled||!r.ids.includes(active.id)) continue;
       const live=(r.subs||[]).filter(s=>!(s.c==='done'&&/cancel|discard|descart/i.test(s.s||'')));
@@ -921,6 +991,15 @@ function processSquad(sq, nodes, report){
       } else {
         addCur(r.assignee||'Sem responsável', devPortion(r), r.cat);
       }
+    }
+  } else if(active){
+    // Sprint fechada: as colunas da pessoa vêm da MATRIZ Dev × Sprint (by[sprintId]), que já
+    // atribui alocação e entrega à sprint certa. Ler o status de HOJE mostraria todo mundo com
+    // 100% entregue — inclusive o que só fechou nas sprints seguintes.
+    for(const dv of Object.values(devMap)){
+      const b=(dv.by||{})[active.id];
+      dv.n=b?b.aN:0; dv.dn=b?b.dN:0; dv.sp=b?b.aSP:0; dv.dsp=b?b.dSP:0;
+      dv.isp=0; dv.tsp=b?Math.max(0,b.aSP-b.dSP):0; dv.noSP=0;
     }
   }
   // A pessoa de QA da squad NÃO aparece nas linhas de DEV (ela é representada só na linha de QA).
@@ -977,13 +1056,19 @@ function processSquad(sq, nodes, report){
     // da sprint (soma de todos os cf 10546 > 0), independente do status. O breakdown mostra em que
     // fase esse trabalho de QA está: DONE = entregue · status de QA (ON TESTING/VERIFIED/DENIED) =
     // em andamento · ainda não chegou no QA (dev/PENDING QA) = não iniciado.
-    if(active&&r.ids.includes(active.id)){
+    if(active&&!active.past&&r.ids.includes(active.id)){
       if(v==null||v<=0) continue;                 // história sem estimativa de QA não gera trabalho de QA
       qa.n++; qa.sp+=v;
       if(doneQA){ qa.dn++; qa.dsp+=v; }
       else if(inQA) qa.isp+=v;                    // ON TESTING · QA VERIFIED · QA DENIED
       else qa.tsp+=v;                             // ainda não chegou no QA (dev / PENDING QA) = não iniciado
     }
+  }
+  // Sprint fechada: mesma correção dos devs — as colunas da sprint vêm da matriz por sprint.
+  if(active&&active.past){
+    const b=(qa.by||{})[active.id];
+    qa.n=b?b.aN:0; qa.dn=b?b.dN:0; qa.sp=b?b.aSP:0; qa.dsp=b?b.dSP:0;
+    qa.isp=0; qa.tsp=b?Math.max(0,b.aSP-b.dSP):0;
   }
   const qaRow={...qa,partN:qa.part.size,avgSP:qa.part.size?qa.histSP/qa.part.size:0,avgN:qa.part.size?qa.histN/qa.part.size:0};
   // Resumo (Sprint Review) da última sprint FECHADA — formato da Retrospective/Rovo
@@ -1136,6 +1221,14 @@ function processSquad(sq, nodes, report){
   return {squad:sq, sprints:list, active, issueCount:nodes.length, devs, qa:qaRow, review, reworkCards, ret};
 }
 
+// Reprocessa o payload cru para o SPRINT_OFF vigente. É só isto que o filtro de sprint faz —
+// nenhuma consulta nova ao Jira, os nós já estão em memória.
+function buildData(raw){
+  const out={};
+  for(const sq of SQUADS){ out[sq.code]=processSquad(sq,(raw.squads&&raw.squads[sq.code])||[],(raw.sprintReport&&raw.sprintReport[sq.code])||null); }
+  return out;
+}
+
 // Tenta consultar o Jira agora mesmo via Worker (tempo real). Timeout para não travar a página
 // se o Worker não estiver configurado/acessível — nesse caso volta null e cai no fallback.
 // 25s (era 12s): desde que o Worker passou a buscar changelog completo (retrabalho por rejeição)
@@ -1167,8 +1260,8 @@ async function loadAll(){
   }
   window.__GEN__=raw.generatedAt;
   window.__LIVE__=live;
-  const results={};
-  for(const sq of SQUADS){ results[sq.code]=processSquad(sq,(raw.squads&&raw.squads[sq.code])||[],(raw.sprintReport&&raw.sprintReport[sq.code])||null); }
+  RAW=raw;                    // guardado para o filtro de sprint reprocessar sem nova consulta
+  const results=buildData(raw);
   // Dependências: se o payload em tempo real ainda não traz o bloco deps (Worker publicado numa
   // versão anterior), busca SÓ as dependências no snapshot do repo — assim a aba já funciona antes
   // do paste no Cloudflare, e as métricas das squads seguem 100% ao vivo.
@@ -1202,7 +1295,11 @@ function summariesHtml(){
   let totScope=0, totDone=0;
   for(const sq of SQUADS){
     const d=DATA[sq.code], a=d.active;
-    if(!a){rows.push('<tr><td><strong>'+sq.name+'</strong></td><td colspan="6" style="color:var(--text-secondary)">Sem sprint ativa no momento (virada de sprint) — inicie a próxima sprint no board para os dados aparecerem</td></tr>');continue;}
+    if(!a){rows.push('<tr><td><strong>'+sq.name+'</strong></td><td colspan="6" style="color:var(--text-secondary)">'+
+      (SPRINT_OFF>0
+        ? 'Esta squad não tem '+SPRINT_OFF+' sprint'+(SPRINT_OFF>1?'s':'')+' anterior'+(SPRINT_OFF>1?'es':'')+' registrada'+(SPRINT_OFF>1?'s':'')+' no board — o histórico dela começa depois'
+        : 'Sem sprint ativa no momento (virada de sprint) — inicie a próxima sprint no board para os dados aparecerem')+
+      '</td></tr>');continue;}
     totScope+=a.badgeScope; totDone+=a.doneSP;
     rows.push('<tr><td><strong>'+sq.name+'</strong><br><span class="t-sec" style="font-size:var(--fs-cap)">'+esc(sprintLabel(a))+' · '+ddmm(a.start)+'–'+ddmm(a.end)+'</span></td>'+
       '<td style="max-width:280px">'+esc((a.goal||'—').split('\n').slice(0,3).join(' '))+'</td>'+
@@ -1213,9 +1310,13 @@ function summariesHtml(){
   // As squads podem estar em sprints diferentes (ex.: INF na Sprint 8 e as outras na 6), então o
   // título do Overview não fixa mais um número de sprint — cada linha mostra a sua.
   const anyActive=SQUADS.map(s=>DATA[s.code].active).find(Boolean);
-  const dayStr=anyActive?('Day '+anyActive.day+' of '+(anyActive.len||WORKDAYS)):'';
-  let html='<div class="panel" id="resumo-overview"><h2>'+ico('flag')+'Overview — sprint atual de cada squad <span class="pill blue">'+dayStr+'</span></h2>'+
+  const past=SPRINT_OFF>0;   // filtro do topo apontando para sprint(s) já encerrada(s)
+  const dayStr=past
+    ?(SPRINT_OFF===1?'sprint anterior · encerrada':SPRINT_OFF+' sprints atrás · encerrada')
+    :(anyActive?('Day '+anyActive.day+' of '+(anyActive.len||WORKDAYS)):'');
+  let html='<div class="panel" id="resumo-overview"><h2>'+ico('flag')+'Overview — sprint '+(past?'selecionada':'atual')+' de cada squad <span class="pill '+(past?'yellow':'blue')+'">'+dayStr+'</span></h2>'+
     '<p class="panel-sub">SP = campo <strong>Story Points</strong> (customfield_10028), que <strong>já é a somatória dos pontos de DEV + QA</strong> da história/tarefa/bug, somado por status category do board, <strong>sem subtarefas</strong> (os pontos vivem nos cards principais — regra igual aos badges do backlog nas 3 squads) e <strong>excluindo issues canceladas</strong> (statuses CANCEL têm categoria “done” no Jira mas não são entrega). Duas métricas: <strong>% Done (SP)</strong> = Completed SP ÷ Scope SP · <strong>% Done (issues)</strong> = contagem de tickets.</p>'+
+    (past?'<p class="panel-sub" style="color:var(--amarelo)"><strong>Sprint encerrada.</strong> Em sprint fechada, <em>Completed</em> é o que foi entregue <strong>dentro</strong> dela (atribuição por data de resolução) — um card que só fechou na sprint seguinte conta lá, não aqui. Cada squad anda na sua numeração, então a linha mostra a sprint dela.</p>':'')+
     '<table><thead><tr><th>Squad</th><th>Sprint Goal</th><th>Scope SP</th><th>Completed SP</th><th>Remaining SP</th><th>% Done (SP)</th><th>% Done (issues)</th></tr></thead><tbody>'+rows.join('')+
     '<tr class="total-row"><td>Total</td><td>—</td><td>'+fmtSP(totScope)+'</td><td>'+fmtSP(totDone)+'</td><td>'+fmtSP(totScope-totDone)+'</td><td>'+pct(totDone,totScope)+'%</td><td>—</td></tr>'+
     '</tbody></table></div>';
@@ -1236,7 +1337,7 @@ function summariesHtml(){
   }).join('');
   html+='<div class="panel" id="resumo-retorno"><h2>'+ico('target')+'Índice de retorno — retrabalho médio por card <span class="pill blue">0 é ótimo</span></h2>'+
     '<p class="panel-sub">Quantas vezes, em média, um card <strong>volta</strong> antes de passar. <strong>Retorno QA</strong> = entradas em REJECTED BY QA / QA DENIED ÷ cards que chegaram ao QA · <strong>Retorno código</strong> = entradas em CODE REVIEW REJECTED ÷ cards que entraram em code review (changelog do Jira, inclui reincidências). Faixas: <strong style="color:var(--verde)">0 ótimo</strong> · ≤0,25 bom · ≤0,50 atenção · ≤1,00 ruim · &gt;1,00 crítico. O <strong>fator</strong> (1 + índice histórico) é o multiplicador sugerido para a pontuação prévia no refinamento. <strong>“sem eventos”</strong> = a squad nunca registrou aquele status de rejeição no histórico: o índice não é 0 por qualidade, é falta de instrumentação no fluxo do board — verificar antes de comparar squads. <strong>Escopo:</strong> só cards dentro de sprint, sem subtarefas.</p>'+
-    '<table><thead><tr><th>Squad</th><th>↩︎ Retorno QA (sprint atual)</th><th>↩︎ Retorno código (sprint atual)</th><th>Média histórica QA</th><th>Média histórica código</th><th>Fator de re-estimativa</th></tr></thead><tbody>'+retRows+'</tbody></table></div>';
+    '<table><thead><tr><th>Squad</th><th>↩︎ Retorno QA ('+(past?'sprint selecionada':'sprint atual')+')</th><th>↩︎ Retorno código ('+(past?'sprint selecionada':'sprint atual')+')</th><th>Média histórica QA</th><th>Média histórica código</th><th>Fator de re-estimativa</th></tr></thead><tbody>'+retRows+'</tbody></table></div>';
   return html;
 }
 
@@ -1244,7 +1345,10 @@ function summariesHtml(){
 function squadPlanHtml(sq){
     let html='';
     const d=DATA[sq.code], a=d.active;
-    if(!a) return '<div class="squad-block"><h3>'+sq.name+'</h3><p style="color:var(--text-secondary);margin:0">Sem sprint ativa no momento (virada de sprint) — inicie a próxima sprint no board para os dados aparecerem.</p></div>';
+    if(!a) return '<div class="squad-block"><h3>'+sq.name+'</h3><p style="color:var(--text-secondary);margin:0">'+
+      (SPRINT_OFF>0
+        ? 'Esta squad não tem '+SPRINT_OFF+' sprint'+(SPRINT_OFF>1?'s':'')+' anterior'+(SPRINT_OFF>1?'es':'')+' no board — escolha um filtro mais recente para vê-la.'
+        : 'Sem sprint ativa no momento (virada de sprint) — inicie a próxima sprint no board para os dados aparecerem.')+'</p></div>';
     const pSP=pct(a.doneSP,a.badgeScope), pIss=pct(a.doneN,a.todoN+a.inprogN+a.doneN);
     const LEN=a.len||WORKDAYS;
     const idealRem=a.badgeScope*(1-a.day/LEN);
@@ -1269,7 +1373,8 @@ function squadPlanHtml(sq){
       ? a.doneList.slice(0,10).map(t=>'<div class="deliv">'+ico('check',14)+' <strong>'+esc(t.key)+'</strong> — '+esc(t.summary.slice(0,90))+' <small style="color:var(--text-secondary)">('+fmtSP(t.sp)+' SP)</small></div>').join('')
         +(a.doneList.length>10?'<small class="brk">… +'+(a.doneList.length-10)+' tarefas</small>':'')
       : '<span style="color:var(--text-secondary)">Nenhuma tarefa concluída ainda nesta sprint.</span>';
-    html+='<div class="squad-block"><h3>'+sq.name+' — '+esc(sprintLabel(a))+' <span class="pill blue">Day '+a.day+'/'+LEN+'</span></h3>'+
+    html+='<div class="squad-block"><h3>'+sq.name+' — '+esc(sprintLabel(a))+' <span class="pill '+(a.past?'yellow':'blue')+'">'+
+      (a.past?'encerrada'+(a.end?' em '+ddmm(a.end):''):'Day '+a.day+'/'+LEN)+'</span></h3>'+
       '<h4 style="margin:var(--sp-15) 0 var(--sp-1);font-size:var(--fs-sm)">Sprint Agreements</h4>'+
       '<table class="agr"><tbody>'+
       '<tr><th>Sprint Goal</th><td>'+esc(a.goal||'Sem goal registrado no Jira — defina o goal na sprint do board')+'</td></tr>'+
@@ -1286,9 +1391,11 @@ function squadPlanHtml(sq){
         return '<h4 style="margin:var(--sp-2) 0 var(--sp-05);font-size:var(--fs-sm)">Progresso do sprint <small style="color:var(--text-secondary);font-weight:400">(por SP — espelha o gadget do Jira)</small></h4>'+
         '<div class="sbar lg"><div style="background:var(--verde);width:'+pd+'%"></div><div style="background:var(--turquesa);width:'+pi+'%"></div></div>'+
         '<div class="sbar-legend">'+
-        '<span><b style="color:var(--verde)">'+pd+'%</b>Concluído · '+fmtSP(a.doneSP)+' SP · '+a.doneN+' issues</span>'+
-        '<span><b style="color:var(--turquesa)">'+pi+'%</b>Em andamento · '+fmtSP(a.inprogSP)+' SP · '+a.inprogN+' issues</span>'+
-        '<span><b>'+pn+'%</b>Não iniciado · '+fmtSP(a.todoSP)+' SP · '+a.todoN+' issues</span></div>'+
+        '<span><b style="color:var(--verde)">'+pd+'%</b>'+(a.past?'Entregue na sprint':'Concluído')+' · '+fmtSP(a.doneSP)+' SP · '+a.doneN+' issues</span>'+
+        // "Em andamento" é um estado de hoje: numa sprint fechada ele não existe (tudo que não
+        // fechou dentro dela virou carryover), então a faixa some em vez de mostrar 0%.
+        (a.past?'':'<span><b style="color:var(--turquesa)">'+pi+'%</b>Em andamento · '+fmtSP(a.inprogSP)+' SP · '+a.inprogN+' issues</span>')+
+        '<span><b>'+pn+'%</b>'+(a.past?'Não concluído nesta sprint':'Não iniciado')+' · '+fmtSP(a.todoSP)+' SP · '+a.todoN+' issues</span></div>'+
         // Decomposição do "Em andamento" por status da UNIDADE DE TRABALHO (subtarefa quando a
         // história foi quebrada, senão o próprio card): mini-barra empilhada + legenda por status.
         (()=>{const ipl=a.inprogByStatus||[]; const tot=ipl.reduce((x,kv)=>x+kv[1],0);
@@ -1306,9 +1413,11 @@ function squadPlanHtml(sq){
       kpi('Scope SP',fmtSP(a.badgeScope),a.todoN+a.inprogN+a.doneN+' issues')+
       kpi('Completed SP',fmtSP(a.doneSP),a.doneN+' issues done')+
       kpi('Remaining SP',fmtSP(a.remaining),a.todoN+' to do · '+a.inprogN+' in progress')+
-      kpi('% Done (SP)',pSP+'%','ideal dia '+a.day+': '+Math.round(a.day/LEN*100)+'%',behind?'crit':'')+
+      kpi('% Done (SP)',pSP+'%',a.past?'no encerramento da sprint':('ideal dia '+a.day+': '+Math.round(a.day/LEN*100)+'%'),behind?'crit':'')+
       kpi('% Done (issues)',pIss+'%','métrica do gadget Jira')+
-      kpi('vs. ideal',(diff>0.5?'+':'')+fmtSP(diff)+' SP',diff>0.5?'atrás do ideal':(diff<-0.5?'à frente do ideal':'on track'),behind?'crit':'')+
+      kpi(a.past?'não entregue':'vs. ideal',(diff>0.5?'+':'')+fmtSP(diff)+' SP',
+        a.past?(diff>0.5?'seguiu para a sprint seguinte':'sprint fechou sem sobra')
+             :(diff>0.5?'atrás do ideal':(diff<-0.5?'à frente do ideal':'on track')),behind?'crit':'')+
       (a.cancSP>0?kpi('Cancelled SP',fmtSP(a.cancSP),a.cancN+' issues canceladas — fora do scope'):'')+
       '</div>'+
       '<div class="chart-holder"><canvas id="bd_'+sq.code+'"></canvas></div>'+
@@ -1924,6 +2033,60 @@ function wireDeps(){
   });
 }
 
+/* ---------- Filtro de sprint (topo, ao lado de Atualizar) ----------
+   Uma opção por offset: 0 = sprint atual de cada squad, 1 = a anterior de cada uma, e assim por
+   diante. O rótulo lista os nomes reais das sprints naquele offset (ex.: "1 sprint atrás · S6 ·
+   S9") porque as squads não estão na mesma numeração — sem isso o filtro pareceria errado para
+   quem olha a INF. O limite é a squad com histórico mais longo; onde a sprint não existe, aquela
+   linha do Overview avisa em vez de sumir. */
+function sprintChoices(){
+  const info=SQUADS.map(sq=>{
+    const d=DATA&&DATA[sq.code]; if(!d) return null;
+    const real=(d.sprints||[]).filter(s=>!String(s.id).startsWith('bl-'));
+    if(!real.length) return null;
+    let bi=real.findIndex(s=>s.state==='active'); if(bi<0) bi=real.length-1;
+    return {real,bi};
+  }).filter(Boolean);
+  const max=info.reduce((m,i)=>Math.max(m,i.bi),0);
+  const out=[];
+  for(let k=0;k<=max;k++){
+    const names=[];
+    for(const i of info){
+      const s=i.real[i.bi-k]; if(!s) continue;
+      const n=sprintLabel(s).replace(/^Sprint\s+/,'S');
+      if(!names.includes(n)) names.push(n);
+    }
+    out.push({off:k,
+      label:(k===0?'Sprint atual':(k===1?'1 sprint atrás':k+' sprints atrás'))+(names.length?' · '+names.join(' · '):'')});
+  }
+  return out;
+}
+function renderSprintFilter(){
+  const sel=document.getElementById('sprintSel'); if(!sel) return;
+  const ch=sprintChoices();
+  if(!ch.length){ sel.disabled=true; return; }
+  if(SPRINT_OFF>ch.length-1) SPRINT_OFF=ch.length-1;   // histórico encolheu entre uma carga e outra
+  sel.innerHTML=ch.map(c=>'<option value="'+c.off+'"'+(c.off===SPRINT_OFF?' selected':'')+'>'+esc(c.label)+'</option>').join('');
+  sel.disabled=ch.length<2;
+  const box=sel.closest('.sprint-filter'); if(box) box.classList.toggle('past',SPRINT_OFF>0);
+}
+function applySprintFilter(off){
+  SPRINT_OFF=off||0;
+  if(!RAW) return;
+  DATA=buildData(RAW);          // mesmo payload, outro recorte
+  updateSubtitle();
+  renderAll();
+  renderSprintFilter();
+}
+// Linha de sprint no header — some do boot() para o filtro reaproveitar.
+function updateSubtitle(){
+  const el=document.getElementById('subtitle'); if(!el) return;
+  const anyA=SQUADS.map(s=>(DATA&&DATA[s.code]||{}).active).find(Boolean);
+  el.textContent=anyA
+    ?(sprintLabel(anyA)+(anyA.past?(' · encerrada'+(anyA.end?' em '+ddmm(anyA.end):'')):(' · Day '+anyA.day+' of '+(anyA.len||WORKDAYS))))
+    :'Dados do Jira';
+}
+
 /* ---------- boot ---------- */
 
 async function boot(){
@@ -1934,15 +2097,15 @@ async function boot(){
   try{
     DATA=await loadAll();   // fetch data.json com cache-bust — sempre a última versão publicada
     loading.classList.add('hidden');
-    const anyA=SQUADS.map(s=>DATA[s.code].active).find(Boolean);
     const gen=window.__GEN__?new Date(window.__GEN__).toLocaleString('pt-BR'):'—';
-    document.getElementById('subtitle').textContent=anyA?sprintLabel(anyA)+' · Day '+anyA.day+' of '+(anyA.len||WORKDAYS):'Dados do Jira';
+    updateSubtitle();
     document.getElementById('ctaStatus').innerHTML=window.__LIVE__
       ?ico('bolt',13)+' Consultado ao vivo agora às '+new Date(window.__GEN__).toLocaleTimeString('pt-BR')
       :(LIVE_ENDPOINT
         ?ico('alert',13)+' Proxy indisponível — último snapshot '+gen+' · <a href="'+ACTIONS_URL+'" target="_blank">ver execuções</a>'
         :'Último snapshot '+gen+' · <a href="'+ACTIONS_URL+'" target="_blank">ver execuções</a>');
     document.getElementById('footer').innerHTML='<strong>Método (precisão):</strong> JQL <code>project = X AND sprint is not EMPTY AND issuetype NOT IN subtaskIssueTypes()</code> · SP = campo <strong>Story Points</strong> (customfield_10028), que <strong>já é a somatória DEV + QA</strong> da história/tarefa/bug (revalidado em 12/08/2026: Story Points = <strong>Story point dev</strong> (cf 10548) + Story point QA (cf 10546) em 137 de 146 cards com os três campos). A <strong>parcela de dev</strong> por pessoa vem das subtarefas ou, em cards sem subtarefa, do campo <strong>Story point dev</strong> lido direto — não da subtração <em>total − QA</em>, que zerava o dev nos cards em que o total não foi atualizado depois de somar o QA, somados por status category, sem subtarefas nas 4 squads. <strong>Testamos usar o endpoint “oficial” de relatório de sprint do Jira como fonte única e revertemos</strong>: ele usa uma foto desatualizada dos pontos (mesma fonte do Burndown nativo) e chegou a mostrar a AE com 1,25 SP concluído quando o real era 64+ — por isso o cálculo ao vivo via JQL abaixo continua sendo a fonte da verdade (já bate com o widget “Progresso do sprint” do Jira). Linha QA do Desempenho por Dev/QA: campo <strong>Story point QA</strong> — a issue é atribuída ao QA quando entra nos status de QA (PENDING QA = não iniciado; ON TESTING/ON GOING QA · QA VERIFIED/APPROVED BY QA · QA DENIED/REJECTED BY QA = em andamento); entregue só em DONE; issues em dev não contam para o QA. <strong>Issues em statuses CANCEL (categoria “done” no Jira) são excluídas do scope e nunca contam como entrega</strong>. Sprints <strong>fechadas</strong> usam baselines oficiais dos reports validados (badges lidos na época); valores sem baseline aparecem com “≈” (reconstruídos). Boards: AE 479 · EE 475 · INF 476 · OE 474. O botão <strong>Atualizar</strong> (no topo) consulta o Jira agora mesmo em tempo real (proxy serverless, sem exigir login de quem acessa); se o proxy não estiver configurado, mostra o último snapshot gerado pelo workflow Update data (fallback horário).';
+    renderSprintFilter();   // antes do render: se o Chart.js (CDN) falhar, o filtro segue usável
     renderAll();
   }catch(e){
     console.error('[weekly-hub] load error',e);
@@ -1966,6 +2129,7 @@ initTheme();
 trackStickyHeight();
 initTopLink();
 document.getElementById('btnRefresh').onclick=()=>boot();
+document.getElementById('sprintSel').onchange=e=>applySprintFilter(+e.target.value||0);
 boot();
 </script>
 </body>
