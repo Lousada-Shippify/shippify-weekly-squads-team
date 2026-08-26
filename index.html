@@ -512,6 +512,8 @@ const SQUADS = [
   {code:'INF', name:'Infrastructure',       project:'INF', board:476},
   {code:'OE',  name:'Operation Experience', project:'OE',  board:474},
 ];
+// Ícone de squad, usado ao lado do nome no título da seção e no menu de navegação.
+const SQUAD_ICON = { AE:'app', EE:'ecosystem', INF:'server', OE:'truck' };
 // BASELINES OFICIAIS de sprints FECHADAS — badges do Jira lidos na época (reports validados:
 // anexo OE + Sprint Plans 5570562 e 22708225). Sprints fechadas não mudam mais; os campos atuais
 // do Jira NÃO preservam a foto da época (commitment, SP re-estimados, clones herdam sprint field),
@@ -599,6 +601,13 @@ const ICO_PATHS = {
   clock:    '<circle cx="12" cy="12" r="8"/><path d="M12 8v4.5l3 1.8"/>',
   trend:    '<path d="M4 16.5 9.5 11l3.5 3.5L20 8"/><path d="M15 8h5v5"/>',
   external: '<path d="M14 5h5v5"/><path d="M19 5 10 14"/><path d="M18.5 13.5V19H5V5.5h5.5"/>',
+  // Ícones por squad (pedido em 26/08/2026) — mesma regra de traço da marca (1,75px, sem
+  // preenchimento) acima. AE = app (smartphone) · EE = ecossistema (hub + parceiros conectados)
+  // · INF = infraestrutura (rack de servidores) · OE = operação (caminhão de entrega).
+  app:      '<rect x="7" y="2.5" width="10" height="19" rx="2.2"/><path d="M11 18.3h2"/>',
+  ecosystem:'<circle cx="12" cy="12" r="2.1"/><circle cx="12" cy="4.3" r="1.9"/><circle cx="4.8" cy="17.3" r="1.9"/><circle cx="19.2" cy="17.3" r="1.9"/><path d="M12 6.2v3.6M10.2 13.5 6.5 15.7M13.8 13.5l3.7 2.2"/>',
+  server:   '<rect x="4" y="4" width="16" height="7" rx="1.8"/><rect x="4" y="13" width="16" height="7" rx="1.8"/><path d="M7 7.5h3M7 16.5h3"/>',
+  truck:    '<rect x="2.5" y="6.5" width="12" height="9" rx="1"/><path d="M14.5 10h3.7l3 3.2v2.3h-2.2"/><circle cx="6.5" cy="17.5" r="1.7"/><circle cx="17" cy="17.5" r="1.7"/><path d="M8.2 17.5h7.1"/>',
 };
 function ico(name,size){
   const p=ICO_PATHS[name]; if(!p) return '';
@@ -1448,7 +1457,7 @@ function renderAll(){
   let html=summariesHtml();
   for(const sq of SQUADS){
     html+='<section class="squad-section" id="sq-'+sq.code+'">'+
-      '<h2 class="squad-title"><span class="pill gray">'+sq.code+'</span> '+esc(sq.name)+'</h2>'+
+      '<h2 class="squad-title"><span class="pill gray">'+sq.code+'</span> '+ico(SQUAD_ICON[sq.code],22)+' '+esc(sq.name)+'</h2>'+
       squadPlanHtml(sq)+squadDetailHtml(sq.code)+
     '</section>';
   }
@@ -1465,7 +1474,7 @@ function renderSquadNav(){
   const t=document.getElementById('squadNav'); if(!t) return;
   // 1b: sigla em negrito + nome completo em peso normal (o "·" saiu — a diferença de peso já
   // separa os dois, e o ponto virava ruído repetido 4 vezes no trilho).
-  t.innerHTML=SQUADS.map(s=>'<button data-sq="'+s.code+'">'+s.code+' <span class="sq-name">'+esc(s.name)+'</span></button>').join('')+
+  t.innerHTML=SQUADS.map(s=>'<button data-sq="'+s.code+'">'+ico(SQUAD_ICON[s.code],15)+' '+s.code+' <span class="sq-name">'+esc(s.name)+'</span></button>').join('')+
     '<button data-sq="DEP">DEP <span class="sq-name">Dependências</span></button>';
   t.querySelectorAll('button').forEach(b=>b.onclick=()=>{
     const sec=document.getElementById('sq-'+b.dataset.sq);
