@@ -1337,7 +1337,7 @@ function summariesHtml(){
     // Sem nenhum evento no histórico = índice não instrumentado (não é mérito da squad)
     const noQA=(r.all.rejQA||0)===0, noCR=(r.all.rejCode||0)===0;
     const naPill='<span class="pill" style="background:rgba(30,164,193,.15);color:var(--turquesa)">sem eventos</span>';
-    return '<tr><td><strong>'+sq.name+'</strong> <span class="pill gray">'+sq.code+'</span></td>'+
+    return '<tr><td><strong>'+sq.name+'</strong></td>'+
       '<td>'+(noQA?naPill:retPill(c.irq))+'<br><small style="color:var(--text-secondary)">'+c.rejQA+' ÷ '+c.baseQA+' testados</small></td>'+
       '<td>'+(noCR?naPill:retPill(c.irc))+'<br><small style="color:var(--text-secondary)">'+c.rejCode+' ÷ '+c.baseCR+' em review</small></td>'+
       '<td>'+retPill(r.all.irq)+'<br><small style="color:var(--text-secondary)">'+r.all.sprints+' sprints · '+r.all.rejQA+' ÷ '+r.all.baseQA+'</small></td>'+
@@ -1430,7 +1430,7 @@ function squadPlanHtml(sq){
       (a.cancSP>0?kpi('Cancelled SP',fmtSP(a.cancSP),a.cancN+' issues canceladas — fora do scope'):'')+
       '</div>'+
       '<div class="chart-holder"><canvas id="bd_'+sq.code+'"></canvas></div>'+
-      '<p style="margin:10px 0 0"><a class="jira-link" href="'+boardUrl(sq)+'" target="_blank">'+ico('external',13)+' Open Sprint Insights in Jira ('+sq.code+') — Progresso + Burndown</a></p></div>';
+      '<p style="margin:10px 0 0"><a class="jira-link" href="'+boardUrl(sq)+'" target="_blank">'+ico('external',13)+' Open Sprint Insights in Jira — Progresso + Burndown</a></p></div>';
   return html;
 }
 // Burndown de uma squad (chamado depois do HTML entrar no DOM)
@@ -1457,7 +1457,7 @@ function renderAll(){
   let html=summariesHtml();
   for(const sq of SQUADS){
     html+='<section class="squad-section" id="sq-'+sq.code+'">'+
-      '<h2 class="squad-title"><span class="pill gray">'+sq.code+'</span> '+ico(SQUAD_ICON[sq.code],22)+' '+esc(sq.name)+'</h2>'+
+      '<h2 class="squad-title">'+ico(SQUAD_ICON[sq.code],22)+' '+esc(sq.name)+'</h2>'+
       squadPlanHtml(sq)+squadDetailHtml(sq.code)+
     '</section>';
   }
