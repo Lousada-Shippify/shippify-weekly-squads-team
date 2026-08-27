@@ -722,6 +722,81 @@ function workdaysBetween(start, end){
   }
   return n;
 }
+// Fim (23:59:59.999) de cada dia útil da sprint — os pontos D1..Dn do burndown. Mesma contagem
+// de workdaysBetween (o dia de início já é o D1), só que devolvendo o instante de corte de cada um.
+function workdayCutoffs(start, len){
+  const out=[]; if(!start||!len) return out;
+  const d=new Date(start); d.setHours(23,59,59,999);
+  for(let i=0;i<len*3+10 && out.length<len;i++){
+    const wd=d.getDay();
+    if(wd!==0 && wd!==6) out.push(d.getTime());
+    d.setDate(d.getDate()+1);
+  }
+  return out;
+}
+// ── BURNDOWN REAL, RECONSTRUÍDO DO CHANGELOG (27/08/2026) ───────────────────────────────────────
+// Antes o gráfico tinha só DOIS pontos — Start (escopo) e o dia de hoje (restante) — e ligava os
+// dois por uma reta. Numa sprint encerrada isso vira uma diagonal perfeita que não conta nada: não
+// mostra quando o trabalho fechou, nem que o escopo mudou no meio do caminho.
+// A causa raiz é que `resolutiondate` vem NULL em 100% dos cards das 4 squads (o workflow não seta
+// resolution ao concluir), então não existe nos campos um "quando ficou pronto".
+// A foto real vem do CHANGELOG, que o Worker já busca para o índice de retorno. Para cada card
+// guardamos a linha do tempo de três coisas — estado (aberto/entregue/cancelado), pertencimento à
+// sprint e Story Points — e reproduzimos o board em cada dia útil.
+// VALIDADO contra o próprio relatório de burndown do Jira (scopechangeburndownchart com
+// statisticFieldId=field_customfield_10028, board 474 · sprint 1270): a curva de ENTREGA bate ponto
+// a ponto (0·0·9·9·9·15·15·15·21,5·24,5·91,5·113,5 SP) e o fechamento bate com os KPIs do painel
+// (128,5 escopo / 113,5 entregue / 15 restante). O escopo difere do Jira em exatamente os 10 SP
+// cancelados, que o painel tira do escopo por regra própria (§ nota de método).
+const sprIds = v => String(v||'').split(',').map(x=>x.trim()).filter(Boolean);
+// Valor de uma série no instante t. Sem eventos → nunca mudou, vale `now`. Antes do 1º evento →
+// vale `first` (o "from" que o Jira registra na primeira mudança).
+function histAt(log, t, first, now){
+  if(!log || !log.length) return now;
+  if(t < log[0][0]) return (first===null||first===undefined) ? now : first;
+  let v=log[0][1];
+  for(const e of log){ if(e[0]<=t) v=e[1]; else break; }
+  return v;
+}
+function memberAt(r, sid, t){
+  if(r.created && r.created>t) return false;
+  const h=r.hist;
+  if(!h || !h.spr || !h.spr.length) return r.ids.indexOf(sid)>=0;
+  const cur=histAt(h.spr, t, h.spr0, null);
+  if(cur===null) return r.ids.indexOf(sid)>=0;
+  return sprIds(cur).indexOf(String(sid))>=0;
+}
+// Série diária de UMA sprint: escopo, entregue e restante no fim de cada dia útil (índice 0 = Start,
+// o instante anterior à abertura da sprint). Devolve null quando o snapshot ainda não traz `hist`
+// (Worker não redeployado) — aí o gráfico cai no traçado antigo de 2 pontos.
+function sprintSeries(s, recs){
+  if(!s || !s.start || !s.end) return null;
+  const pool=recs.filter(r=>{
+    if(r.ids.indexOf(s.id)>=0) return true;
+    const h=r.hist; if(!h) return false;
+    if(sprIds(h.spr0).indexOf(String(s.id))>=0) return true;
+    return (h.spr||[]).some(e=>sprIds(e[1]).indexOf(String(s.id))>=0);
+  });
+  if(!pool.length || !pool.some(r=>r.hist)) return null;
+  const len=workdaysBetween(s.start,s.end)||WORKDAYS;
+  const cuts=workdayCutoffs(s.start,len);
+  if(!cuts.length) return null;
+  const scope=[],done=[],rem=[],n=[],dn=[];
+  for(const T of [new Date(s.start).getTime()-1, ...cuts]){
+    let sc=0,dd=0,cn=0,cd=0;
+    for(const r of pool){
+      if(!memberAt(r,s.id,T)) continue;
+      const k=histAt(r.hist&&r.hist.st, T, r.hist&&r.hist.st0, r.curK);
+      if(k===2) continue;                       // cancelada sai do escopo (mesma regra dos KPIs)
+      const v=histAt(r.hist&&r.hist.sp, T, r.hist&&r.hist.sp0, r.sp)||0;
+      sc+=v; cn++;
+      if(k===1){ dd+=v; cd++; }
+    }
+    scope.push(+sc.toFixed(2)); done.push(+dd.toFixed(2)); rem.push(+(sc-dd).toFixed(2));
+    n.push(cn); dn.push(cd);
+  }
+  return {len,scope,done,rem,n,dn};
+}
 function workdayIndex(start, today, max){
   // business days elapsed from sprint start (inclusive) to today
   let d=new Date(start); d.setHours(0,0,0,0);
@@ -768,7 +843,12 @@ function processSquad(sq, nodes, report){
       touchCR:(n.touchCR===undefined
         ? ((n.rejCode||0)>0||RET_CR_RE.test((f.status&&f.status.name)||'')||RET_QA_RE.test((f.status&&f.status.name)||'')||RET_POST_RE.test((f.status&&f.status.name)||''))
         : !!(n.touchCR||(n.rejCode||0)>0)),
-      subs:Array.isArray(n.subs)?n.subs:[]});
+      subs:Array.isArray(n.subs)?n.subs:[],
+      // Insumos do burndown reconstruído (ver sprintSeries): quando o card nasceu, seu estado de
+      // HOJE (0 aberto · 1 entregue · 2 cancelado) e as linhas do tempo vindas do changelog.
+      created:f.created?+new Date(f.created):0,
+      curK:cancelled?2:(cat==='done'?1:0),
+      hist:n.hist||null});
     const rec=recs[recs.length-1];
     for(const s of sorted){ const agg=getS(s); if(cancelled){agg.cancSP+=sp;agg.cancN++;} else {agg.scope+=sp;agg.count++;} }
     // Os badges por status (todo/inprog/done) saíram daqui em 25/08/2026, quando entrou o filtro de
@@ -791,6 +871,9 @@ function processSquad(sq, nodes, report){
   }
   // Sprints "future" (planejadas, não iniciadas) ficam fora do mapa — entram quando ativarem
   const list=[...sprints.values()].filter(s=>s.state!=='future').sort((a,b)=>(a.start||0)-(b.start||0));
+  // Burndown real de CADA sprint (não só da ativa): o filtro do topo pode apontar para qualquer uma
+  // e a legada precisa mostrar o que de fato aconteceu, não uma reta entre dois pontos.
+  for(const s of list){ if(!String(s.id).startsWith('bl-')) s.series=sprintSeries(s,recs); }
   // Sprints fechadas: sobrepõe com o baseline oficial (badges lidos na época) quando existir
   for(const s of list){
     if(s.state!=='closed') continue;
@@ -1360,7 +1443,8 @@ function squadPlanHtml(sq){
         : 'Sem sprint ativa no momento (virada de sprint) — inicie a próxima sprint no board para os dados aparecerem.')+'</p></div>';
     const pSP=pct(a.doneSP,a.badgeScope), pIss=pct(a.doneN,a.todoN+a.inprogN+a.doneN);
     const LEN=a.len||WORKDAYS;
-    const idealRem=a.badgeScope*(1-a.day/LEN);
+    // Mesma guideline do burndown: parte do escopo comprometido na abertura da sprint.
+    const idealRem=((a.series&&a.series.scope.length)?a.series.scope[0]:a.badgeScope)*(1-a.day/LEN);
     const diff=a.remaining-idealRem;
     // "atrás do ideal" com folga de 0,5 SP (mesmo limiar do rótulo abaixo, para o filete e o
     // texto nunca discordarem entre si).
@@ -1430,20 +1514,54 @@ function squadPlanHtml(sq){
       (a.cancSP>0?kpi('Cancelled SP',fmtSP(a.cancSP),a.cancN+' issues canceladas — fora do scope'):'')+
       '</div>'+
       '<div class="chart-holder"><canvas id="bd_'+sq.code+'"></canvas></div>'+
+      (()=>{const se=a.series; if(!se) return '<p class="panel-sub" style="margin:8px 0 0">Progressão diária indisponível neste snapshot — o gráfico mostra apenas escopo inicial e restante de hoje. Atualize os dados para reconstruir o dia a dia.</p>';
+        const last=se.rem.length-1, dScope=+(se.scope[last]-a.badgeScope).toFixed(2), dRem=+(se.rem[last]-a.remaining).toFixed(2);
+        const diverge=(a.past&&(Math.abs(dScope)>0.5||Math.abs(dRem)>0.5))
+          ? ' <strong>No fechamento reconstruído:</strong> '+fmtSP(se.scope[last])+' SP de escopo e '+fmtSP(se.rem[last])+' SP restantes — os cards acima usam o baseline oficial lido na época ('+fmtSP(a.badgeScope)+' / '+fmtSP(a.remaining)+' SP).'
+          : '';
+        return '<p class="panel-sub" style="margin:8px 0 0">Reconstruído do <strong>changelog do Jira</strong>, dia útil a dia útil: <strong>Real</strong> = SP que ainda faltavam no fim daquele dia · <strong>Escopo</strong> = SP dentro da sprint naquele dia (sobe quando entra card, desce quando sai ou é cancelado) · <strong>Ideal</strong> = queda linear a partir do escopo comprometido na abertura. Cards cancelados saem do escopo — é a única diferença para o burndown nativo do Jira, que os mantém.'+diverge+'</p>';})()+
       '<p style="margin:10px 0 0"><a class="jira-link" href="'+boardUrl(sq)+'" target="_blank">'+ico('external',13)+' Open Sprint Insights in Jira — Progresso + Burndown</a></p></div>';
   return html;
 }
 // Burndown de uma squad (chamado depois do HTML entrar no DOM)
 function drawBurndown(sq){
   const a=DATA[sq.code]&&DATA[sq.code].active; if(!a) return;
-  const labels=['Start']; const ideal=[a.badgeScope]; const actual=[a.badgeScope];
   const LEN=a.len||WORKDAYS;
-  for(let i=1;i<=LEN;i++){labels.push('D'+i);ideal.push(Math.max(0,+(a.badgeScope*(1-i/LEN)).toFixed(1)));actual.push(i===a.day?a.remaining:null);}
+  const ser=a.series;
+  const labels=['Start']; for(let i=1;i<=LEN;i++) labels.push('D'+i);
+  // A guideline sai do escopo COMPROMETIDO (o que estava na sprint na abertura), como no Jira —
+  // não do escopo final, que já embute tudo que entrou depois.
+  const base=(ser&&ser.scope.length)?ser.scope[0]:a.badgeScope;
+  const ideal=[base];
+  for(let i=1;i<=LEN;i++) ideal.push(Math.max(0,+(base*(1-i/LEN)).toFixed(2)));
+  let actual, scopeLine=null;
+  if(ser){
+    // Reconstrução real: um ponto por dia útil. Na sprint em curso os dias que ainda não
+    // aconteceram ficam vazios em vez de virarem uma projeção.
+    const cut=a.past?LEN:Math.min(a.day,LEN);
+    actual=ser.rem.map((v,i)=>i<=cut?v:null);
+    scopeLine=ser.scope.map((v,i)=>i<=cut?v:null);
+    while(actual.length<LEN+1){actual.push(null);scopeLine.push(null);}
+  }else{
+    // Fallback (snapshot antigo, sem `hist`): volta ao traçado de 2 pontos.
+    actual=[a.badgeScope];
+    for(let i=1;i<=LEN;i++) actual.push(i===a.day?a.remaining:null);
+  }
   const ctx=document.getElementById('bd_'+sq.code); if(!ctx) return;
-  charts.push(new Chart(ctx,{type:'line',data:{labels,datasets:[
-    {label:'Ideal (SP remaining)',data:ideal,borderColor:DS.textDim,borderDash:[5,4],pointRadius:0,tension:0},
-    {label:'Actual (SP remaining)',data:actual,borderColor:DS.verde,backgroundColor:DS.verde,pointRadius:5,spanGaps:true,tension:0}
-  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{color:DS.textSec,font:{size:11}}}},
+  const ds=[{label:'Ideal (SP restante)',data:ideal,borderColor:DS.textDim,borderDash:[5,4],pointRadius:0,tension:0}];
+  if(scopeLine) ds.push({label:'Escopo (SP na sprint)',data:scopeLine,borderColor:DS.turquesa,backgroundColor:DS.turquesa,
+    borderWidth:1.5,pointRadius:0,stepped:'after',spanGaps:false,tension:0});
+  ds.push({label:'Real (SP restante)',data:actual,borderColor:DS.verde,backgroundColor:DS.verde,
+    pointRadius:ser?3:5,spanGaps:!ser,tension:0});
+  charts.push(new Chart(ctx,{type:'line',data:{labels,datasets:ds},
+    options:{responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+    plugins:{legend:{labels:{color:DS.textSec,font:{size:11}}},
+      // afterBody aceita array de linhas — uma string com \n vira uma linha só em algumas versões.
+      tooltip:ser?{callbacks:{afterBody:(it)=>{const i=it[0].dataIndex; if(i>=ser.done.length) return [];
+        const d=i>0?+(ser.scope[i]-ser.scope[i-1]).toFixed(2):0;
+        const out=['Entregue acumulado: '+fmtSP(ser.done[i])+' SP ('+ser.dn[i]+' issues)'];
+        if(d) out.push('Escopo '+(d>0?'+':'')+fmtSP(d)+' SP neste dia');
+        return out;}}}:{}},
     scales:{x:{ticks:{color:DS.textDim},grid:{color:DS.gridLine}},y:{beginAtZero:true,ticks:{color:DS.textDim},grid:{color:DS.gridLine}}}}}));
 }
 
@@ -1534,7 +1652,7 @@ function squadDetailHtml(curSquad){
   // continua em "Sprint Agreements" (sprint ativa) e no "Resumo" (sprint encerrada).
   const rowCanc=list.map(s=>'<td>'+(s.cancSP>0?fmtSP(s.cancSP)+' <small>('+s.cancN+' issues)</small>':'—')+'</td>').join('');
   let html='<div class="panel"><h2>'+ico('bars')+'Métricas-chave — '+d.squad.name+' ('+curSquad+')</h2>'+
-    '<p class="panel-sub">SP = campo <strong>Story Points</strong> (customfield_10028) — <strong>já é a somatória dos pontos de DEV + QA</strong> registrados nas histórias, tarefas e bugs. Sprints fechadas usam os <strong>números oficiais dos reports</strong> (badges do Jira lidos na época) — os campos atuais do Jira não preservam a foto da sprint (scope commitment, SP re-estimados, clones). Valores com "≈" são reconstruídos dos campos atuais. Sprint ativa: leitura ao vivo, excluindo subtarefas e canceladas.</p>'+
+    '<p class="panel-sub">SP = campo <strong>Story Points</strong> (customfield_10028) — <strong>já é a somatória dos pontos de DEV + QA</strong> registrados nas histórias, tarefas e bugs. Sprints fechadas usam os <strong>números oficiais dos reports</strong> (badges do Jira lidos na época) — os campos atuais do Jira não preservam a foto da sprint (scope commitment, SP re-estimados, clones). Valores com "≈" são reconstruídos dos campos atuais. Sprint ativa: leitura ao vivo, excluindo subtarefas e canceladas. O <strong>burndown</strong> de cada sprint (acima, no bloco da squad) não usa nenhuma das duas fontes: é reconstruído dia a dia do <strong>changelog do Jira</strong> — a única que preserva quando cada card fechou, já que <code>resolutiondate</code> vem vazia em 100% dos cards das 4 squads.</p>'+
     // container com rolagem própria + 1ª coluna fixa: com 8+ sprints a tabela não empurra a página
     '<div class="table-scroll" data-scroll-end="1"><table class="wide-sprints"><thead><tr><th>Métrica</th>'+head+'</tr></thead><tbody>'+
     '<tr><td><strong>Scope SP</strong></td>'+rowScope+'</tr>'+
@@ -2113,7 +2231,7 @@ async function boot(){
       :(LIVE_ENDPOINT
         ?ico('alert',13)+' Proxy indisponível — último snapshot '+gen+' · <a href="'+ACTIONS_URL+'" target="_blank">ver execuções</a>'
         :'Último snapshot '+gen+' · <a href="'+ACTIONS_URL+'" target="_blank">ver execuções</a>');
-    document.getElementById('footer').innerHTML='<strong>Método (precisão):</strong> JQL <code>project = X AND sprint is not EMPTY AND issuetype NOT IN subtaskIssueTypes()</code> · SP = campo <strong>Story Points</strong> (customfield_10028), que <strong>já é a somatória DEV + QA</strong> da história/tarefa/bug (revalidado em 12/08/2026: Story Points = <strong>Story point dev</strong> (cf 10548) + Story point QA (cf 10546) em 137 de 146 cards com os três campos). A <strong>parcela de dev</strong> por pessoa vem das subtarefas ou, em cards sem subtarefa, do campo <strong>Story point dev</strong> lido direto — não da subtração <em>total − QA</em>, que zerava o dev nos cards em que o total não foi atualizado depois de somar o QA, somados por status category, sem subtarefas nas 4 squads. <strong>Testamos usar o endpoint “oficial” de relatório de sprint do Jira como fonte única e revertemos</strong>: ele usa uma foto desatualizada dos pontos (mesma fonte do Burndown nativo) e chegou a mostrar a AE com 1,25 SP concluído quando o real era 64+ — por isso o cálculo ao vivo via JQL abaixo continua sendo a fonte da verdade (já bate com o widget “Progresso do sprint” do Jira). Linha QA do Desempenho por Dev/QA: campo <strong>Story point QA</strong> — a issue é atribuída ao QA quando entra nos status de QA (PENDING QA = não iniciado; ON TESTING/ON GOING QA · QA VERIFIED/APPROVED BY QA · QA DENIED/REJECTED BY QA = em andamento); entregue só em DONE; issues em dev não contam para o QA. <strong>Issues em statuses CANCEL (categoria “done” no Jira) são excluídas do scope e nunca contam como entrega</strong>. Sprints <strong>fechadas</strong> usam baselines oficiais dos reports validados (badges lidos na época); valores sem baseline aparecem com “≈” (reconstruídos). Boards: AE 479 · EE 475 · INF 476 · OE 474. O botão <strong>Atualizar</strong> (no topo) consulta o Jira agora mesmo em tempo real (proxy serverless, sem exigir login de quem acessa); se o proxy não estiver configurado, mostra o último snapshot gerado pelo workflow Update data (fallback horário).';
+    document.getElementById('footer').innerHTML='<strong>Método (precisão):</strong> JQL <code>project = X AND sprint is not EMPTY AND issuetype NOT IN subtaskIssueTypes()</code> · SP = campo <strong>Story Points</strong> (customfield_10028), que <strong>já é a somatória DEV + QA</strong> da história/tarefa/bug (revalidado em 12/08/2026: Story Points = <strong>Story point dev</strong> (cf 10548) + Story point QA (cf 10546) em 137 de 146 cards com os três campos). A <strong>parcela de dev</strong> por pessoa vem das subtarefas ou, em cards sem subtarefa, do campo <strong>Story point dev</strong> lido direto — não da subtração <em>total − QA</em>, que zerava o dev nos cards em que o total não foi atualizado depois de somar o QA, somados por status category, sem subtarefas nas 4 squads. <strong>Testamos usar o endpoint “oficial” de relatório de sprint do Jira como fonte única e revertemos</strong>: ele usa uma foto desatualizada dos pontos (mesma fonte do Burndown nativo) e chegou a mostrar a AE com 1,25 SP concluído quando o real era 64+ — por isso o cálculo ao vivo via JQL abaixo continua sendo a fonte da verdade (já bate com o widget “Progresso do sprint” do Jira). Linha QA do Desempenho por Dev/QA: campo <strong>Story point QA</strong> — a issue é atribuída ao QA quando entra nos status de QA (PENDING QA = não iniciado; ON TESTING/ON GOING QA · QA VERIFIED/APPROVED BY QA · QA DENIED/REJECTED BY QA = em andamento); entregue só em DONE; issues em dev não contam para o QA. <strong>Issues em statuses CANCEL (categoria “done” no Jira) são excluídas do scope e nunca contam como entrega</strong>. Sprints <strong>fechadas</strong> usam baselines oficiais dos reports validados (badges lidos na época); valores sem baseline aparecem com “≈” (reconstruídos). Boards: AE 479 · EE 475 · INF 476 · OE 474. <strong>Burndown:</strong> reconstruído do <strong>changelog</strong> (transições de status, entradas/saídas do campo Sprint e re-estimativas de Story Points), dia útil a dia útil — os campos atuais não têm quando o card fechou (<code>resolutiondate</code> nula em 100% dos cards) e o gráfico anterior ligava apenas dois pontos por uma reta. Conferido contra o relatório nativo de burndown do Jira (<code>scopechangeburndownchart</code> com <code>statisticFieldId=field_customfield_10028</code>, board 474 · Sprint 7): a curva de entrega bate ponto a ponto e o fechamento bate com os KPIs; o escopo difere só nos SP cancelados, que aqui saem do escopo por regra. O botão <strong>Atualizar</strong> (no topo) consulta o Jira agora mesmo em tempo real (proxy serverless, sem exigir login de quem acessa); se o proxy não estiver configurado, mostra o último snapshot gerado pelo workflow Update data (fallback horário).';
     renderSprintFilter();   // antes do render: se o Chart.js (CDN) falhar, o filtro segue usável
     renderAll();
   }catch(e){

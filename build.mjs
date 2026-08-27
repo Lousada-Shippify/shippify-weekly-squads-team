@@ -20,9 +20,14 @@ const TOKEN = process.env.JIRA_API_TOKEN;
 if (!EMAIL || !TOKEN) { console.error('Defina os secrets JIRA_EMAIL e JIRA_API_TOKEN'); process.exit(1); }
 
 const AUTH = 'Basic ' + Buffer.from(`${EMAIL}:${TOKEN}`).toString('base64');
-const FIELDS = ['status','customfield_10028','customfield_10546','customfield_10548','customfield_10020','resolutiondate','summary','parent','assignee'];
+const FIELDS = ['status','customfield_10028','customfield_10546','customfield_10548','customfield_10020','resolutiondate','summary','parent','assignee','created'];
 // Retrabalho por rejeição (changelog): conta quantas vezes a issue ENTROU em cada status abaixo.
 // Nomes reais confirmados no Jira (changelog de OE-140): "CODE REVIEW REJECTED" e "REJECTED BY QA".
+// BURNDOWN HISTORICO (27/08/2026): resolutiondate vem NULL em 100% dos cards das 4 squads --
+// o workflow nao seta resolution ao concluir. Sem ela nao existe "quando o card ficou pronto".
+// A foto real vem do CHANGELOG (mesma busca ja usada pelo indice de retorno): transicoes de
+// status, do campo Sprint e de Story Points. Mantido identico ao worker.js.
+const CANCEL_STATUS_RE = /cancel|discard|descart/i;
 const REJECT_CODE_RE = /CODE\s*REVIEW\s*REJECTED/i;
 const REJECT_QA_RE = /REJECTED\s*BY\s*QA|QA\s*DENIED/i;
 // Estágios (BASE dos índices de retorno): a issue CHEGOU ao QA / ao code review pelo menos uma vez.
@@ -215,7 +220,9 @@ async function fetchChangelogs(ids) {
       const chunk = ids.slice(i, i + 100);
       let token = null;
       for (let page = 0; page < 40; page++) {
-        const body = { issueIdsOrKeys: chunk, fieldIds: ['status'], maxResults: 1000, ...(token ? { nextPageToken: token } : {}) };
+        // fieldIds filtra o changelog no servidor. 'status' alimenta o indice de retorno; o campo
+        // Sprint (10020) e o Story Points (10028) alimentam a reconstrucao do burndown historico.
+        const body = { issueIdsOrKeys: chunk, fieldIds: ['status', 'customfield_10020', 'customfield_10028'], maxResults: 1000, ...(token ? { nextPageToken: token } : {}) };
         const d = await post(`https://${SITE}/rest/api/3/changelog/bulkfetch`, body);
         for (const entry of (d.issueChangeLogs || [])) {
           const k = String(entry.issueId);
@@ -245,6 +252,62 @@ function statusTransitions(issue, bulk) {
   return out;
 }
 
+// Categoria de cada status do site, resolvida por ID (o changelog devolve o ID e um nome no idioma
+// de quem transicionou -- "Done" e "Concluido" convivem no mesmo board). 0 = aberto/em andamento
+// 1 = entregue · 2 = cancelado (categoria "done" no Jira, fora do escopo pela regra do painel).
+async function fetchStatusKinds() {
+  try {
+    const arr = await get(`https://${SITE}/rest/api/3/status`);
+    const m = {};
+    for (const st of (arr || [])) {
+      const cat = (st.statusCategory && st.statusCategory.key) || 'new';
+      m[String(st.id)] = cat === 'done' ? (CANCEL_STATUS_RE.test(st.name || '') ? 2 : 1) : 0;
+    }
+    return m;
+  } catch (e) {
+    console.warn('/rest/api/3/status falhou — classificando status pelo nome:', e.message);
+    return null;
+  }
+}
+
+const DONE_NAME_RE = /^(done|conclu|finaliz|listo|monitoring|pending to release|qa passed|aprovado)/i;
+function statusKind(id, name, kinds) {
+  if (kinds && kinds[String(id)] !== undefined) return kinds[String(id)];
+  const n = name || '';
+  if (CANCEL_STATUS_RE.test(n)) return 2;
+  return DONE_NAME_RE.test(n) ? 1 : 0;
+}
+const histNum = v => (v === '' || v === null || v === undefined) ? 0 : (isNaN(parseFloat(v)) ? 0 : parseFloat(v));
+
+// Linha do tempo compacta da issue, para o front reconstruir o burndown dia a dia. Ver worker.js.
+function historyLogs(issue, bulk, kinds) {
+  const hs = (bulk && bulk.get(String(issue.id))) || issue.changelog?.histories || [];
+  const rows = [];
+  for (const h of hs) {
+    const t = +new Date(h.created);
+    if (!t) continue;
+    for (const it of (h.items || [])) rows.push([t, it]);
+  }
+  rows.sort((a, b) => a[0] - b[0]);
+  const st = [], sp = [], spr = [];
+  let st0 = null, sp0 = null, spr0 = null;
+  for (const [t, it] of rows) {
+    const fid = it.fieldId || '', fname = it.field || '';
+    if (fid === 'status' || fname === 'status') {
+      if (st0 === null) st0 = statusKind(it.from, it.fromString, kinds);
+      const k = statusKind(it.to, it.toString, kinds);
+      if (!st.length || st[st.length - 1][1] !== k) st.push([t, k]);
+    } else if (fid === 'customfield_10028' || fname === 'Story Points') {
+      if (sp0 === null) sp0 = histNum(it.fromString);
+      sp.push([t, histNum(it.toString)]);
+    } else if (fid === 'customfield_10020' || fname === 'Sprint') {
+      if (spr0 === null) spr0 = String(it.from || '');
+      spr.push([t, String(it.to || '')]);
+    }
+  }
+  return { st, sp, spr, st0, sp0, spr0 };
+}
+
 function countRejections(issue, bulk) {
   let rejCode = 0, rejQA = 0, lastAt = null, lastWhat = null;
   // touchQA / touchCR: a issue entrou pelo menos uma vez no estágio (base do índice de retorno).
@@ -264,7 +327,7 @@ function countRejections(issue, bulk) {
 }
 
 // Mantém exatamente os caminhos de campo que o front-end (processSquad) usa
-function slim(issue, bulk) {
+function slim(issue, bulk, kinds) {
   const f = issue.fields || {};
   const rej = countRejections(issue, bulk);
   return {
@@ -275,6 +338,7 @@ function slim(issue, bulk) {
       customfield_10546: typeof f.customfield_10546 === 'number' ? f.customfield_10546 : null,
       customfield_10548: typeof f.customfield_10548 === 'number' ? f.customfield_10548 : null,
       resolutiondate: f.resolutiondate || null,
+      created: f.created || null,
       status: f.status ? { name: f.status.name, statusCategory: { key: f.status.statusCategory?.key || 'new' } } : null,
       customfield_10020: Array.isArray(f.customfield_10020)
         ? f.customfield_10020.map(s => ({ id: s.id, name: s.name, state: s.state, boardId: s.boardId, goal: s.goal || '', startDate: s.startDate || null, endDate: s.endDate || null }))
@@ -288,11 +352,14 @@ function slim(issue, bulk) {
     touchCR: rej.touchCR,
     lastRejAt: rej.lastRejAt,
     lastRejWhat: rej.lastRejWhat,
+    hist: historyLogs(issue, bulk, kinds),
   };
 }
 
 const squads = {};
 const sprintReport = {};
+// Mapa status -> categoria: uma chamada so, compartilhada pelas 4 squads (burndown historico).
+const statusKinds = await fetchStatusKinds();
 for (const [p, boardId] of PROJECTS) {
   const jql = `project = ${p} AND sprint is not EMPTY AND issuetype NOT IN subtaskIssueTypes()`;
   const issues = await searchAll(jql);
@@ -302,7 +369,7 @@ for (const [p, boardId] of PROJECTS) {
   const allKeys = issues.map(i => i.key);
   const subByParent = allKeys.length ? await fetchSubtasksByParent(p, allKeys) : {};
   const bulk = await fetchChangelogs(issues.map(i => i.id).filter(Boolean));
-  squads[p] = issues.map(i => { const o = slim(i, bulk); o.subs = subByParent[i.key] || []; return o; });
+  squads[p] = issues.map(i => { const o = slim(i, bulk, statusKinds); o.subs = subByParent[i.key] || []; return o; });
   sprintReport[p] = await getSprintReport(boardId);
   const subCount = Object.values(subByParent).reduce((a, v) => a + v.length, 0);
   const totRej = squads[p].reduce((a, i) => a + i.rejCode + i.rejQA, 0);

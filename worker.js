@@ -26,9 +26,19 @@ const ALLOWED_ORIGIN = 'https://lousada-shippify.github.io';
 // A relação 10028 = 10548 + 10546 vale em 137/146 cards. Nos 9 restantes o TOTAL ficou igual ao
 // DEV (ninguém somou o QA depois), então derivar dev por subtração zerava trabalho real de dev
 // (ex.: AE-245 total 1 / QA 1 / dev 1 → subtração dava 0). Por isso lemos 10548 direto.
-const FIELDS = ['status', 'customfield_10028', 'customfield_10546', 'customfield_10548', 'customfield_10020', 'resolutiondate', 'summary', 'parent', 'assignee'];
+const FIELDS = ['status', 'customfield_10028', 'customfield_10546', 'customfield_10548', 'customfield_10020', 'resolutiondate', 'summary', 'parent', 'assignee', 'created'];
 // Retrabalho por rejeição (changelog): conta quantas vezes a issue ENTROU em cada status abaixo.
 // Nomes reais confirmados no Jira (changelog de OE-140): "CODE REVIEW REJECTED" e "REJECTED BY QA".
+// BURNDOWN HISTORICO (27/08/2026): resolutiondate vem NULL em 100% dos cards das 4 squads --
+// o workflow nao seta resolution ao concluir. Sem ela nao existe "quando o card ficou pronto" e o
+// burndown so conseguia desenhar 2 pontos (Start e hoje), virando uma reta que nao conta nada.
+// A foto real vem do CHANGELOG, que este Worker ja busca para o indice de retorno: transicoes de
+// status (quando entrou/saiu de DONE), do campo Sprint (quando entrou/saiu da sprint) e de Story
+// Points (re-estimativas). Validado contra o proprio relatorio de burndown do Jira
+// (scopechangeburndownchart com statisticFieldId=field_customfield_10028, board 474 / sprint 1270):
+// a curva de entrega bate ponto a ponto; o escopo difere apenas nos 10 SP cancelados, que o painel
+// tira do escopo por regra propria.
+const CANCEL_STATUS_RE = /cancel|discard|descart/i;
 const REJECT_CODE_RE = /CODE\s*REVIEW\s*REJECTED/i;
 const REJECT_QA_RE = /REJECTED\s*BY\s*QA|QA\s*DENIED/i;
 // Estágios (BASE dos índices de retorno): a issue CHEGOU ao QA / ao code review pelo menos uma vez.
@@ -194,7 +204,9 @@ async function fetchChangelogs(auth, ids) {
       const chunk = ids.slice(i, i + 100);
       let token = null;
       for (let page = 0; page < 40; page++) {
-        const body = { issueIdsOrKeys: chunk, fieldIds: ['status'], maxResults: 1000, ...(token ? { nextPageToken: token } : {}) };
+        // fieldIds filtra o changelog no servidor. 'status' alimenta o indice de retorno; o campo
+        // Sprint (10020) e o Story Points (10028) alimentam a reconstrucao do burndown historico.
+        const body = { issueIdsOrKeys: chunk, fieldIds: ['status', 'customfield_10020', 'customfield_10028'], maxResults: 1000, ...(token ? { nextPageToken: token } : {}) };
         const d = await jiraPost(auth, '/rest/api/3/changelog/bulkfetch', body);
         for (const entry of (d.issueChangeLogs || [])) {
           const k = String(entry.issueId);
@@ -222,6 +234,68 @@ function statusTransitions(issue, bulk) {
     }
   }
   return out;
+}
+
+// Categoria de cada status do site, resolvida por ID (o changelog devolve o ID e um nome que vem
+// no idioma de quem transicionou -- "Done" e "Concluido" convivem no mesmo board, entao classificar
+// por nome erraria). 0 = aberto/em andamento · 1 = entregue · 2 = cancelado (categoria "done" no
+// Jira, mas fora do escopo pela regra do painel). Uma unica chamada por carga.
+async function fetchStatusKinds(auth) {
+  try {
+    const arr = await jiraGet(auth, '/rest/api/3/status');
+    const m = {};
+    for (const st of (arr || [])) {
+      const cat = (st.statusCategory && st.statusCategory.key) || 'new';
+      m[String(st.id)] = cat === 'done' ? (CANCEL_STATUS_RE.test(st.name || '') ? 2 : 1) : 0;
+    }
+    return m;
+  } catch (e) {
+    return null;
+  }
+}
+
+// Fallback quando o mapa de status nao carregou: classifica pelo nome (pt/en/es do board).
+const DONE_NAME_RE = /^(done|conclu|finaliz|listo|monitoring|pending to release|qa passed|aprovado)/i;
+function statusKind(id, name, kinds) {
+  if (kinds && kinds[String(id)] !== undefined) return kinds[String(id)];
+  const n = name || '';
+  if (CANCEL_STATUS_RE.test(n)) return 2;
+  return DONE_NAME_RE.test(n) ? 1 : 0;
+}
+const histNum = v => (v === '' || v === null || v === undefined) ? 0 : (isNaN(parseFloat(v)) ? 0 : parseFloat(v));
+
+// Linha do tempo compacta da issue, para o front reconstruir o burndown dia a dia:
+//   st  [[ts, 0|1|2], ...]  transicoes de estado (so as que MUDAM o estado, para nao inchar)
+//   sp  [[ts, valor], ...]  mudancas de Story Points
+//   spr [[ts, "1234,1270"], ...] conjunto de sprints DEPOIS de cada mudanca do campo Sprint
+//   st0 / sp0 / spr0        valor ANTES do primeiro evento de cada serie (o "from" do Jira)
+// Lista vazia + st0 nulo = a issue nunca mudou aquilo: vale o valor atual desde sempre.
+function historyLogs(issue, bulk, kinds) {
+  const hs = (bulk && bulk.get(String(issue.id))) || issue.changelog?.histories || [];
+  const rows = [];
+  for (const h of hs) {
+    const t = +new Date(h.created);
+    if (!t) continue;
+    for (const it of (h.items || [])) rows.push([t, it]);
+  }
+  rows.sort((a, b) => a[0] - b[0]);
+  const st = [], sp = [], spr = [];
+  let st0 = null, sp0 = null, spr0 = null;
+  for (const [t, it] of rows) {
+    const fid = it.fieldId || '', fname = it.field || '';
+    if (fid === 'status' || fname === 'status') {
+      if (st0 === null) st0 = statusKind(it.from, it.fromString, kinds);
+      const k = statusKind(it.to, it.toString, kinds);
+      if (!st.length || st[st.length - 1][1] !== k) st.push([t, k]);
+    } else if (fid === 'customfield_10028' || fname === 'Story Points') {
+      if (sp0 === null) sp0 = histNum(it.fromString);
+      sp.push([t, histNum(it.toString)]);
+    } else if (fid === 'customfield_10020' || fname === 'Sprint') {
+      if (spr0 === null) spr0 = String(it.from || '');
+      spr.push([t, String(it.to || '')]);
+    }
+  }
+  return { st, sp, spr, st0, sp0, spr0 };
 }
 
 function countRejections(issue, bulk) {
@@ -281,7 +355,7 @@ async function getSprintReport(auth, boardId) {
 }
 
 // Mantém exatamente os caminhos de campo que o front-end (processSquad) usa
-function slim(issue, bulk) {
+function slim(issue, bulk, kinds) {
   const f = issue.fields || {};
   const rej = countRejections(issue, bulk);
   return {
@@ -292,6 +366,7 @@ function slim(issue, bulk) {
       customfield_10546: typeof f.customfield_10546 === 'number' ? f.customfield_10546 : null,
       customfield_10548: typeof f.customfield_10548 === 'number' ? f.customfield_10548 : null,
       resolutiondate: f.resolutiondate || null,
+      created: f.created || null,
       status: f.status ? { name: f.status.name, statusCategory: { key: f.status.statusCategory?.key || 'new' } } : null,
       customfield_10020: Array.isArray(f.customfield_10020)
         ? f.customfield_10020.map(s => ({ id: s.id, name: s.name, state: s.state, boardId: s.boardId, goal: s.goal || '', startDate: s.startDate || null, endDate: s.endDate || null }))
@@ -305,6 +380,7 @@ function slim(issue, bulk) {
     touchCR: rej.touchCR,
     lastRejAt: rej.lastRejAt,
     lastRejWhat: rej.lastRejWhat,
+    hist: historyLogs(issue, bulk, kinds),
   };
 }
 
@@ -328,10 +404,13 @@ export default {
       const sprintReport = {};
       // Dependências (links Action item): dispara em paralelo com as squads e é aguardada no fim.
       const depsP = fetchDeps(auth);
+      // Mapa status -> categoria: uma chamada so, compartilhada pelas 4 squads (burndown historico).
+      const kindsP = fetchStatusKinds(auth);
       // As 4 squads são independentes → rodam EM PARALELO (antes era um laço sequencial e o tempo
       // total somava: com INF + subtarefas de todas as sprints passou de 18s e começou a estourar
       // o timeout de 25s do front, caindo pro snapshot. Dentro de cada squad, subtarefas/changelog/
       // sprint report também vão em paralelo. Corrigido em 03/08/2026.
+      const statusKinds = await kindsP;
       await Promise.all(PROJECTS.map(async (p) => {
         const board = BOARD_BY_PROJECT[p];
         const jql = `project = ${p} AND sprint is not EMPTY AND issuetype NOT IN subtaskIssueTypes()`;
@@ -344,7 +423,7 @@ export default {
           fetchChangelogs(auth, issues.map(i => i.id).filter(Boolean)),
           getSprintReport(auth, board),
         ]);
-        squads[p] = issues.map(i => { const o = slim(i, bulk); o.subs = subByParent[i.key] || []; return o; });
+        squads[p] = issues.map(i => { const o = slim(i, bulk, statusKinds); o.subs = subByParent[i.key] || []; return o; });
         sprintReport[p] = report;
       }));
       const deps = await depsP;
