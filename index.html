@@ -523,7 +523,14 @@ const reworkFactor = r => 1 - Math.min(RW_CAP, RW_STEP*(((r&&r.rejCode)||0)+((r&
 // TOTAL devs, mesmo que apareçam como responsáveis de alguma subtarefa/história. Ex.: Gabriel
 // Goldner Silva (PM) e Rayanne Ferreira (Design) na AE. QA já é tratado à parte via QA_OWNER.
 // INF (confirmado em 28/07/2026): Luana é QA (aparece na linha de QA) e Reginaldo Soares não é dev.
-const NON_DEV = ['Gabriel Goldner Silva', 'Rayanne Ferreira', 'Reginaldo Soares'];
+const NON_DEV = ['Gabriel Goldner Silva', 'Rayanne Ferreira', 'Reginaldo Soares',
+                 'Diego Albuquerque Teodoro'];   // PM da EE — não entra nas linhas de DEV
+// Chave de comparação de pessoas: primeiro + último nome, minúsculo e sem acento. Serve para casar
+// o mesmo humano escrito de formas diferentes nas constantes e no Jira, sem casar homônimos parciais
+// ("Pedro Silveira" ≠ "Pedro Henrique ... da Silva").
+const nameKey = n => { const p=String(n||'').normalize('NFD').replace(/[̀-ͯ]/g,'')
+    .replace(/\s+—.*$/,'').trim().toLowerCase().split(/\s+/).filter(Boolean);
+  return p.length ? (p[0]+' '+p[p.length-1]) : ''; };
 // Apelidos de EXIBIÇÃO para contas que não são pessoas. "Jira Triage Agent" é a conta de
 // automação que recebe os cards de reunião/treinamento da squad; mostrar o nome do bot nos
 // indicadores confunde a leitura (pedido de Vitor em 12/08/2026). O apelido é aplicado na
@@ -1176,8 +1183,10 @@ function processSquad(sq, nodes, report){
   // A pessoa de QA da squad NÃO aparece nas linhas de DEV (ela é representada só na linha de QA).
   // Casa pelo nome que precede " — QA" no QA_OWNER (ex.: "Nathaly Brasiliano").
   const qaLead=(QA_OWNER[sq.code]||'').split(' — ')[0].trim();
-  const isQAperson=nm=>!!qaLead && (nm===qaLead || nm.startsWith(qaLead+' ') || qaLead.startsWith(nm+' '));
-  const isNonDev=nm=>NON_DEV.some(x=>nm===x||nm.startsWith(x+' ')||x.startsWith(nm+' '));
+  const isQAperson=nm=>!!qaLead && (nm===qaLead || nm.startsWith(qaLead+' ') || qaLead.startsWith(nm+' ')
+    || nameKey(nm)===nameKey(qaLead));
+  const isNonDev=nm=>NON_DEV.some(x=>nm===x||nm.startsWith(x+' ')||x.startsWith(nm+' ')
+    || nameKey(nm)===nameKey(x));
   // MÉDIA FINAL (31/08/2026) = janela móvel das 3 últimas sprints fechadas em que a pessoa participou,
   // já com o desconto de retrabalho. As Sprints 1–2 quase não têm entrega creditada (OE: 8,75 e 5 SP
   // somando TODOS os devs, contra 49,5–66,5 nas seguintes) e, valendo 2 dos 7 divisores, achatavam
