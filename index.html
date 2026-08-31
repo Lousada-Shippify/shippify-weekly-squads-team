@@ -2015,12 +2015,14 @@ function squadDetailHtml(curSquad){
       return '<td style="white-space:nowrap;background:rgba(78,203,113,.06)">'+
         '<strong title="'+esc(avgTip(v,v.avgFullRaw,pct))+'">'+fmtSP(Math.round(v.avgFull*100)/100)+' SP</strong> · '+(Math.round(v.avgFullN*10)/10)+' tarefas'+rwMark(v)+
         '<br><small style="color:var(--text-secondary)">'+v.partN+' sprint(s) fechada(s)'+(pct>0?' · <span style="color:var(--laranja)">−'+pct+'%</span>':'')+'</small>'+
-        '<br><small style="color:var(--text-disabled)" title="'+esc(v.winLbl+(pctW>0?' · desconto de retrabalho −'+pctW+'%':''))+'">3 últimas: '+fmtSP(Math.round(v.avgSP*100)/100)+' SP · '+(Math.round(v.avgN*10)/10)+' tarefas</small></td>';
+        '<br><small style="font-size:10px;color:var(--text-disabled)" title="'+esc('média das 3 últimas fechadas ('+v.winLbl+') · '+(Math.round(v.avgN*10)/10)+' tarefas'+(pctW>0?' · desconto de retrabalho −'+pctW+'%':''))+'">3 últimas: '+fmtSP(Math.round(v.avgSP*100)/100)+' SP</small></td>';
     };
     html+='<div class="panel"><h2>'+ico('bars')+'Entregas por Dev/QA × Sprint</h2>'+
       '<p class="panel-sub">Por sprint: <strong style="color:var(--verde)">entregue</strong> (SP · tarefas) e, abaixo, o <strong>alocado</strong>. Devs na <strong>parcela de DEV</strong> (subtarefas, ou o campo <em>Story point dev</em> nos cards sem subtarefa) — por isso o número é menor que o badge do backlog, que mostra o <em>Story Points total</em> = DEV + QA; linha de QA em <strong>Story point QA</strong>. <strong>Média geral</strong> (número de cima) = entregue ÷ todas as sprints fechadas em que a pessoa participou, já com o <strong>desconto de retrabalho</strong>; é a referência principal e ordena as linhas. Abaixo, a mesma conta só nas <strong>3 últimas fechadas</strong>, como leitura do momento.</p>'+
-      '<div class="table-scroll" data-scroll-end="1"><table class="wide-sprints"><thead><tr><th>Dev / QA</th>'+realS.map(s=>'<th>'+esc(sprintLabel(s))+(s.state==='active'?' <span class="t-now">atual</span>':'')+'</th>').join('')+'<th>Média geral /sprint<br><small style="font-weight:400;color:var(--text-disabled)">todas as fechadas · 3 últimas abaixo</small></th></tr></thead><tbody>'+
-      d.devs.map(v=>'<tr><td title="'+esc(v.name)+'"'+(v.name==='Sem responsável'?' style="color:var(--text-disabled);font-style:italic"':' style="font-weight:600"')+'>'+esc(shortName(v.name))+'</td>'+
+      '<div class="table-scroll" data-scroll-end="1"><table class="wide-sprints"><thead><tr><th>Dev / QA</th>'+realS.map(s=>'<th>'+esc(sprintLabel(s))+(s.state==='active'?' <span class="t-now">atual</span>':'')+'</th>').join('')+'<th>Média geral</th></tr></thead><tbody>'+
+      // "Sem responsável" é balde de trabalho sem dono, não pessoa: fora DESTA matriz (continua no
+      // Desempenho por Dev/QA, onde serve para o total da sprint fechar).
+      d.devs.filter(v=>v.name!=='Sem responsável').map(v=>'<tr><td title="'+esc(v.name)+'"'+(v.name==='Sem responsável'?' style="color:var(--text-disabled);font-style:italic"':' style="font-weight:600"')+'>'+esc(shortName(v.name))+'</td>'+
         realS.map(s=>cellD(v,s)).join('')+avgCell(v)+'</tr>').join('')+
       ((q&&(q.n>0||q.histN>0))?('<tr class="qa-row"><td style="font-weight:600">'+ico('flask',14)+' '+esc(shortName(q.name))+' <span class="pill purple">Story point QA</span></td>'+realS.map(s=>cellD(q,s)).join('')+avgCell(q)+'</tr>'):'')+
       '</tbody></table></div>'+
