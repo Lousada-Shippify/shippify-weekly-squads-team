@@ -489,6 +489,20 @@ const retBand = v => v===null||v===undefined||isNaN(v) ? {l:'sem base',c:'var(--
   : v<=0.5 ? {l:'ATENÇÃO',c:'var(--laranja)'} : v<=1 ? {l:'RUIM',c:'var(--magenta-text)'} : {l:'CRÍTICO',c:'var(--magenta-text)'};
 const retPill = v => { const b=retBand(v); return '<span class="pill" style="background:'+b.c+'26;color:'+b.c+'">'+fmtIdx(v)+'</span>'; };
 const retFactor = v => (v===null||v===undefined||isNaN(v)) ? '—' : ('×'+(Math.round((1+v)*100)/100).toFixed(2).replace('.',','));
+// QUANDO o card ficou pronto — do CHANGELOG (hist.st: [[ts, 0 aberto | 1 entregue | 2 cancelado]]).
+// `resolutiondate` vem NULL em 100% dos cards das 4 squads, então sem isto não existe data de
+// conclusão em lugar nenhum e a entrega era creditada à ÚLTIMA sprint do card (ver delivAtId).
+const doneAtFromHist = h => {
+  const st=(h&&h.st)||[]; let t=null;
+  for(const e of st){ if(e[1]===1) t=e[0]; else if(e[1]===0) t=null; }
+  return t;
+};
+// DESCONTO DE RETRABALHO (31/08/2026): cada retorno registrado no changelog do card — REJECTED BY QA
+// ou CODE REVIEW REJECTED — desconta 25% dos SP daquele card, com teto de 50%. O desconto é por CARD,
+// não por pessoa: card que passou limpo nunca perde ponto, e quem trabalhou num card que voltou
+// perde na proporção do próprio SP. A linha de QA não sofre desconto (o retorno é achado dela).
+const RW_STEP = 0.25, RW_CAP = 0.5;
+const reworkFactor = r => 1 - Math.min(RW_CAP, RW_STEP*(((r&&r.rejCode)||0)+((r&&r.rejQA)||0)));
 // Pessoas que NÃO são desenvolvedoras (PM, Design, etc.) — não entram nas linhas de DEV nem no
 // TOTAL devs, mesmo que apareçam como responsáveis de alguma subtarefa/história. Ex.: Gabriel
 // Goldner Silva (PM) e Rayanne Ferreira (Design) na AE. QA já é tratado à parte via QA_OWNER.
@@ -855,15 +869,23 @@ function processSquad(sq, nodes, report){
     // sprint: eles precisam ser calculados para a sprint SELECIONADA, que pode não ser a ativa — e a
     // seleção só existe depois que a lista de sprints está montada. Ver fillBuckets(), mais abaixo.
     // delivered attribution for history (cancelled never counts as delivered)
+    // A data de conclusão vem do CHANGELOG (doneAtFromHist), não de `resolutiondate` — que é NULL em
+    // 100% dos cards, então o código caía sempre no `else` e creditava a entrega à ÚLTIMA sprint do
+    // card: OE-58 (5 SP) fechou em 20/08, dentro da Sprint 7, e aparecia como entrega da Sprint 4.
+    // Aqui o alvo fica restrito às sprints DO PRÓPRIO CARD, para que o "concluído" de uma sprint nunca
+    // ultrapasse o escopo dela; a sprint real da entrega (que pode ser outra) sai em delivAtId.
+    rec.doneAt = doneAtFromHist(n.hist);
     if(cat==='done' && !cancelled){
       let target=null;
-      if(res){
-        target = sorted.find(s=>{
-          const st=s.startDate?new Date(s.startDate):null, en=s.endDate?new Date(s.endDate):null;
-          return st&&en&&res>=st&&res<=new Date(en.getTime()+86400000);
-        });
-        if(!target) target = sorted.filter(s=>s.endDate&&new Date(s.endDate)>=res)[0] || sorted[sorted.length-1];
-      } else target = sorted[sorted.length-1];
+      const at = (rec.doneAt!=null) ? rec.doneAt : (res?res.getTime():null);
+      if(at!=null){
+        target = sorted.filter(s=>{
+          const st=s.startDate?new Date(s.startDate).getTime():null, en=s.endDate?new Date(s.endDate).getTime():null;
+          return st!=null&&en!=null&&at>=st&&at<en+86400000;
+        }).pop();
+        if(!target) target = sorted.filter(s=>s.startDate&&new Date(s.startDate).getTime()<=at).pop();
+      }
+      if(!target) target = sorted[sorted.length-1];
       const tg=getS(target); tg.delivered+=sp; tg.doneCount++;
       rec.delivClosed = target.state==='closed'; // entrega em sprint já fechada → conta na média por dev
       rec.delivSprintId = target.id; // sprint à qual a entrega foi atribuída (matriz dev × sprint)
@@ -871,6 +893,28 @@ function processSquad(sq, nodes, report){
   }
   // Sprints "future" (planejadas, não iniciadas) ficam fora do mapa — entram quando ativarem
   const list=[...sprints.values()].filter(s=>s.state!=='future').sort((a,b)=>(a.start||0)-(b.start||0));
+  // SPRINT REAL DA ENTREGA (delivAtId) — usada pela matriz Dev × Sprint e pela média por pessoa: a
+  // sprint cuja janela contém a data de conclusão do changelog, MESMO que o card nunca tenha sido
+  // movido para ela. Um card parado na Sprint 4 que só fechou em 20/08 é entrega da Sprint 7, não da
+  // Sprint 4 — antes engordava retroativamente uma sprint fechada meses depois. Os agregados por
+  // sprint (scope/delivered/KPIs) continuam usando delivSprintId, restrito às sprints do card.
+  {
+    const realSeq=list.filter(s=>!String(s.id).startsWith('bl-'));
+    const sprintAt=t=>{ let best=null;
+      for(const s of realSeq){
+        const a=s.start?s.start.getTime():null, b=s.end?s.end.getTime():null;
+        if(a==null||b==null||t<a||t>=b+86400000) continue;
+        if(!best||a>best.start.getTime()) best=s;
+      }
+      return best; };
+    for(const r of recs){
+      if(r.cancelled||r.cat!=='done'){ r.delivAtId=null; r.delivAtClosed=false; continue; }
+      const s=(r.doneAt!=null)?sprintAt(r.doneAt):null;
+      const tgt=s||realSeq.find(x=>x.id===r.delivSprintId)||null;
+      r.delivAtId=tgt?tgt.id:null;
+      r.delivAtClosed=!!(tgt&&tgt.state==='closed');
+    }
+  }
   // Burndown real de CADA sprint (não só da ativa): o filtro do topo pode apontar para qualquer uma
   // e a legada precisa mostrar o que de fato aconteceu, não uma reta entre dois pontos.
   for(const s of list){ if(!String(s.id).startsWith('bl-')) s.series=sprintSeries(s,recs); }
@@ -1056,14 +1100,33 @@ function processSquad(sq, nodes, report){
         bs.aSP+=u.sp; bs.aN++;
       }
       if(u.done){
-        // entrega atribuída à sprint em que a história foi concluída; se ainda não fechou, à ativa
-        const target=(r.delivSprintId!=null)?r.delivSprintId
-          :((active&&r.ids.includes(active.id))?active.id:null);
+        // ENTREGA POR UNIDADE (31/08/2026): a subtarefa concluída conta como entregue mesmo que o card
+        // ainda não tenha chegado a DONE. Antes o crédito dependia de delivSprintId/delivClosed, que só
+        // existem quando o PAI está done — e as 5 subtarefas prontas do OE-110 (10 SP, card em APPROVED
+        // BY QA desde a Sprint 4) não apareciam em célula nenhuma nem na média do Robson.
+        // Sprint do crédito: a da conclusão do card (changelog) ou, para unidade pronta em card ainda
+        // aberto, a sprint ativa se o card estiver nela, senão a última sprint do card.
+        const target=(r.delivAtId!=null)?r.delivAtId
+          :((active&&r.ids.includes(active.id))?active.id
+            :(r.ids.length?r.ids[r.ids.length-1]:null));
         if(target!=null){
           const bs=d.by[target]=d.by[target]||{aSP:0,aN:0,dSP:0,dN:0};
           bs.dSP+=u.sp; bs.dN++;
+          bs.dAdj=(bs.dAdj||0)+u.sp*reworkFactor(r);   // mesma célula, já com desconto de retrabalho
+          if(closedIds.has(target)){
+            d.histSP+=u.sp; d.histN++;
+            // retrabalho da pessoa nas sprints FECHADAS, contado UMA vez por card (um card com 5
+            // subtarefas não vale 5 retornos): base = cards que chegaram ao QA ou ao code review.
+            if(!d.rwSeen) d.rwSeen=new Set();
+            if(!d.rwSeen.has(r.key)){
+              d.rwSeen.add(r.key);
+              const rej=((r.rejCode||0)+(r.rejQA||0));
+              d.rwRej=(d.rwRej||0)+rej;
+              if(r.touchQA||r.touchCR) d.rwBase=(d.rwBase||0)+1;
+              if(rej>0) d.rwCards=(d.rwCards||0)+1;
+            }
+          }
         }
-        if(r.delivClosed){ d.histSP+=u.sp; d.histN++; }
       }
     }
   }
@@ -1099,10 +1162,35 @@ function processSquad(sq, nodes, report){
   const qaLead=(QA_OWNER[sq.code]||'').split(' — ')[0].trim();
   const isQAperson=nm=>!!qaLead && (nm===qaLead || nm.startsWith(qaLead+' ') || qaLead.startsWith(nm+' '));
   const isNonDev=nm=>NON_DEV.some(x=>nm===x||nm.startsWith(x+' ')||x.startsWith(nm+' '));
+  // MÉDIA FINAL (31/08/2026) = janela móvel das 3 últimas sprints fechadas em que a pessoa participou,
+  // já com o desconto de retrabalho. As Sprints 1–2 quase não têm entrega creditada (OE: 8,75 e 5 SP
+  // somando TODOS os devs, contra 49,5–66,5 nas seguintes) e, valendo 2 dos 7 divisores, achatavam
+  // a média de todo mundo em 25–40%. O histórico completo continua exposto na segunda linha da célula.
+  const closedSeq=list.filter(s=>s.state==='closed'&&!String(s.id).startsWith('bl-'));
+  const winIds=closedSeq.slice(-3).map(s=>s.id);
+  const winLbl=closedSeq.slice(-3).map(s=>sprintLabel(s).replace(/^Sprint\s*/,'S')).join('–');
+  const sumBy=(d,ids,k)=>ids.reduce((x,id)=>x+(((d.by||{})[id]||{})[k]||0),0);
+  const withAvg=d=>{
+    const wIds=winIds.filter(id=>d.part.has(id));
+    const useW=wIds.length>0;
+    const ids=useW?wIds:[...d.part];
+    const n=ids.length;
+    const adj=sumBy(d,ids,'dAdj'), raw=sumBy(d,ids,'dSP'), tsk=sumBy(d,ids,'dN');
+    const histAdj=sumBy(d,[...d.part],'dAdj');
+    return {...d, partN:d.part.size, winN:n, winIds:ids,
+      winLbl:useW?winLbl:(n?'todas as fechadas':'sem sprint fechada'),
+      avgSP:n?adj/n:0, avgSPraw:n?raw/n:0, avgN:n?tsk/n:0,
+      avgFull:d.part.size?histAdj/d.part.size:0, avgFullRaw:d.part.size?d.histSP/d.part.size:0,
+      rwLoss:raw>0?(raw-adj)/raw:0, rwIdx:retIdx(d.rwRej||0,d.rwBase||0),
+      rwRej:d.rwRej||0, rwBase:d.rwBase||0, rwCards:d.rwCards||0};
+  };
   const devs=Object.values(devMap)
     .filter(d=>(d.n>0||d.histN>0||d.rejCode>0||d.rejQA>0) && !isQAperson(d.name) && !isNonDev(d.name))
-    .map(d=>({...d,partN:d.part.size,avgSP:d.part.size?d.histSP/d.part.size:0,avgN:d.part.size?d.histN/d.part.size:0}))
-    .sort((a,b)=>{if(a.name==='Sem responsável')return 1;if(b.name==='Sem responsável')return -1;return b.sp-a.sp;});
+    .map(withAvg)
+    // Ordem = maior MÉDIA FINAL ajustada (quem entrega muito e volta pouco sobe). Empate: SP da
+    // sprint atual. "Sem responsável" é balde, não pessoa — fica sempre por último.
+    .sort((a,b)=>{if(a.name==='Sem responsável')return 1;if(b.name==='Sem responsável')return -1;
+      return (b.avgSP-a.avgSP)||(b.sp-a.sp);});
   // Cards com retrabalho por rejeição (sprint ativa): issues com 1+ transições para
   // CODE REVIEW REJECTED (código) ou REJECTED BY QA (QA), via changelog do Jira. Inclui
   // rejeições já corrigidas e reincidências — não é só o status atual.
@@ -1135,13 +1223,14 @@ function processSquad(sq, nodes, report){
       // ENTREGUE continua so em DONE, creditado a sprint em que a issue foi concluida (com
       // fallback para a ativa quando o Jira nao registrou a sprint de entrega) — igual aos devs.
       if(doneQA){
-        const target=(r.delivSprintId!=null)?r.delivSprintId
+        const target=(r.delivAtId!=null)?r.delivAtId
           :((active&&r.ids.includes(active.id))?active.id:null);
         if(target!=null){
           const bs=qa.by[target]=qa.by[target]||{aSP:0,aN:0,dSP:0,dN:0};
           bs.dSP+=v; bs.dN++;
+          bs.dAdj=(bs.dAdj||0)+v;                     // QA não sofre desconto de retrabalho
+          if(closedIds.has(target)){ qa.histSP+=v; qa.histN++; }
         }
-        if(r.delivClosed){ qa.histSP+=v; qa.histN++; }
       }
     }
     // SP atribuídos ao QA = TOTAL real de Story point QA alocado em TODAS as histórias/tarefas/bugs
@@ -1162,7 +1251,7 @@ function processSquad(sq, nodes, report){
     qa.n=b?b.aN:0; qa.dn=b?b.dN:0; qa.sp=b?b.aSP:0; qa.dsp=b?b.dSP:0;
     qa.isp=0; qa.tsp=b?Math.max(0,b.aSP-b.dSP):0;
   }
-  const qaRow={...qa,partN:qa.part.size,avgSP:qa.part.size?qa.histSP/qa.part.size:0,avgN:qa.part.size?qa.histN/qa.part.size:0};
+  const qaRow={...withAvg(qa), isQAline:true};
   // Resumo (Sprint Review) da última sprint FECHADA — formato da Retrospective/Rovo
   let review=null;
   const realClosed=list.filter(s=>s.state==='closed'&&!String(s.id).startsWith('bl-'));
@@ -1836,9 +1925,27 @@ function squadDetailHtml(curSquad){
       return '<td style="white-space:nowrap"><strong style="color:var(--verde)">'+fmtSP(b.dSP)+' SP</strong> · '+b.dN+' tsk'+
         '<br><small style="color:var(--text-secondary)">aloc. '+fmtSP(b.aSP)+' SP · '+b.aN+'</small></td>';
     };
-    const avgCell=v=>'<td style="white-space:nowrap;background:rgba(78,203,113,.06)"><strong>'+fmtSP(Math.round(v.avgSP*100)/100)+' SP</strong> · '+(Math.round(v.avgN*10)/10)+' tarefas<br><small style="color:var(--text-secondary)">'+v.partN+' sprint(s) fechada(s)</small></td>';
+    // Marca DISCRETA de retrabalho: bolinha de 7px na faixa do índice de retorno da pessoa nas sprints
+    // fechadas (verde = nenhum retorno em card algum). O desconto aplicado aparece como "−x%".
+    const rwMark=v=>{
+      if(v.isQAline) return '<span title="A linha de QA não sofre desconto de retrabalho — o retorno é achado dela, não erro dela." style="display:inline-block;width:7px;height:7px;border-radius:50%;border:1px solid var(--text-disabled);vertical-align:middle;margin-left:6px"></span>';
+      const b=retBand(v.rwIdx);
+      const t=(v.rwBase<=0) ? 'sem card avaliado em QA/review nas sprints fechadas'
+        : (v.rwRej===0) ? ('retrabalho '+fmtIdx(v.rwIdx)+' ('+b.l+') — nenhum retorno em '+v.rwBase+' card(s) avaliados nas sprints fechadas')
+        : ('retrabalho '+fmtIdx(v.rwIdx)+' ('+b.l+') — '+v.rwRej+' retorno(s) em '+v.rwCards+' de '+v.rwBase+' card(s) avaliados nas sprints fechadas');
+      return '<span title="'+esc(t)+'" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:'+b.c+';vertical-align:middle;margin-left:6px;opacity:.85"></span>';
+    };
+    const avgCell=v=>{
+      const pct=Math.round(v.rwLoss*100);
+      const tip='bruto '+fmtSP(Math.round(v.avgSPraw*100)/100)+' SP · '+
+        (v.isQAline?'linha de QA não sofre desconto':(pct>0?('desconto de retrabalho −'+pct+'%'):'sem desconto de retrabalho'));
+      return '<td style="white-space:nowrap;background:rgba(78,203,113,.06)">'+
+        '<strong title="'+esc(tip)+'">'+fmtSP(Math.round(v.avgSP*100)/100)+' SP</strong> · '+(Math.round(v.avgN*10)/10)+' tarefas'+rwMark(v)+
+        '<br><small style="color:var(--text-secondary)">'+v.winN+' sprint(s) · '+esc(v.winLbl)+(pct>0?' · <span style="color:var(--laranja)">−'+pct+'%</span>':'')+'</small>'+
+        '<br><small style="color:var(--text-disabled)">'+v.partN+' fechada(s): '+fmtSP(Math.round(v.avgFull*100)/100)+' SP</small></td>';
+    };
     html+='<div class="panel"><h2>'+ico('bars')+'Entregas por Dev/QA × Sprint</h2>'+
-      '<p class="panel-sub">Por sprint: <strong style="color:var(--verde)">entregue</strong> (SP · tarefas, atribuído à sprint em que a issue foi concluída) e, abaixo, o alocado. Devs na <strong>parcela de DEV</strong> (subtarefas, ou o campo <em>Story point dev</em> nos cards sem subtarefa) — por isso o número é menor que o badge do backlog, que mostra o <em>Story Points total</em> = DEV + QA; linha de QA em <strong>Story point QA</strong> — <strong>alocado</strong> = todo Story point QA das issues da sprint (mesmo número da coluna <em>SP atribuídos</em> em Desempenho por Dev/QA), <strong>entregue</strong> só quando a issue chega a DONE. <strong>Média final</strong> = entregue ÷ '+closedCnt+' sprints fechadas em que participou — recalcula ao vivo quando cada sprint encerra (a atual entra ao fechar).</p>'+
+      '<p class="panel-sub">Por sprint: <strong style="color:var(--verde)">entregue</strong> (SP · tarefas, atribuído à sprint em que a issue foi concluída — data lida do <em>changelog</em>, já que <code>resolutiondate</code> vem vazia em 100% dos cards) e, abaixo, o alocado. Devs na <strong>parcela de DEV</strong> (subtarefas, ou o campo <em>Story point dev</em> nos cards sem subtarefa) — por isso o número é menor que o badge do backlog, que mostra o <em>Story Points total</em> = DEV + QA; linha de QA em <strong>Story point QA</strong> — <strong>alocado</strong> = todo Story point QA das issues da sprint (mesmo número da coluna <em>SP atribuídos</em> em Desempenho por Dev/QA), <strong>entregue</strong> só quando a issue chega a DONE. Nas linhas de DEV a <strong>subtarefa concluída já conta como entregue</strong>, mesmo que o card ainda não tenha chegado a DONE. <strong>Média final</strong> = média das <strong>3 últimas sprints fechadas em que a pessoa participou</strong> (as Sprints 1–2 quase não têm entrega creditada e achatavam a média de todos em 25–40%; o histórico completo das '+closedCnt+' fechadas fica na linha de baixo da célula), já com o <strong>desconto de retrabalho</strong>: cada retorno de QA ou de code review desconta 25% dos SP <em>daquele card</em>, com teto de 50% — card que passou limpo não perde nada. A bolinha marca a faixa de retrabalho da pessoa (verde = nenhum retorno; passe o mouse para ver a conta) e os devs estão ordenados pela maior média final. A linha de QA não sofre desconto. Recalcula ao vivo quando cada sprint encerra (a atual entra ao fechar).</p>'+
       '<div class="table-scroll" data-scroll-end="1"><table class="wide-sprints"><thead><tr><th>Dev / QA</th>'+realS.map(s=>'<th>'+esc(sprintLabel(s))+(s.state==='active'?' <span class="t-now">atual</span>':'')+'</th>').join('')+'<th>Média final /sprint</th></tr></thead><tbody>'+
       d.devs.map(v=>'<tr><td title="'+esc(v.name)+'"'+(v.name==='Sem responsável'?' style="color:var(--text-disabled);font-style:italic"':' style="font-weight:600"')+'>'+esc(shortName(v.name))+'</td>'+
         realS.map(s=>cellD(v,s)).join('')+avgCell(v)+'</tr>').join('')+
