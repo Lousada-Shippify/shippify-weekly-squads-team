@@ -229,6 +229,22 @@
   .panel h2{display:flex;align-items:center;gap:9px;flex-wrap:wrap;font-size:var(--fs-h3);font-weight:700;margin:0 0 var(--sp-05)}
   .panel h2 .ico{color:var(--ico-accent)}
   .panel .panel-sub{font-family:var(--font-body);font-size:var(--fs-cap);color:var(--text-secondary);margin:0 0 var(--sp-2)}
+  /* ÍCONE "i" DO PAINEL (31/08/2026): o texto de método de cada KPI saiu do corpo do painel e vive
+     dentro deste popover. Antes cada bloco abria com 4–6 linhas de explicação que ninguém relia e
+     que empurravam a tabela para baixo; a explicação continua a um clique, no mesmo lugar. */
+  .info-i{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;flex:0 0 auto;
+    padding:0;border:1px solid var(--border);border-radius:var(--r-pill);background:transparent;
+    color:var(--text-secondary);font-family:var(--font-display);font-size:11px;font-weight:700;line-height:1;
+    cursor:pointer;transition:background .15s,color .15s,border-color .15s}
+  .info-i:hover{color:var(--text-primary);border-color:var(--text-secondary)}
+  .info-i:focus-visible{outline:2px solid var(--turquesa);outline-offset:2px}
+  .info-i.on{background:var(--fill-turquesa);color:var(--turquesa);border-color:var(--turquesa)}
+  .info-pop{margin:0 0 var(--sp-2);padding:var(--sp-2);border:1px solid var(--border);
+    border-left:3px solid var(--turquesa);border-radius:var(--r-sm);background:var(--bg-surface)}
+  .info-pop[hidden]{display:none}
+  .info-pop>p{margin:0}
+  .info-pop>p+p{margin-top:var(--sp-15)}
+  .info-pop .panel-sub{margin:0}
   table{width:100%;border-collapse:collapse;font-family:var(--font-body);font-size:var(--fs-sm)}
   th,td{text-align:left;padding:var(--sp-15) var(--sp-2);border-bottom:1px solid var(--border);vertical-align:top}
   th{background:var(--bg-card);color:var(--text-secondary);font-family:var(--font-display);font-weight:600;font-size:var(--fs-label);text-transform:uppercase;letter-spacing:.05em}
@@ -1192,10 +1208,10 @@ function processSquad(sq, nodes, report){
   const devs=Object.values(devMap)
     .filter(d=>(d.n>0||d.histN>0||d.rejCode>0||d.rejQA>0) && !isQAperson(d.name) && !isNonDev(d.name))
     .map(withAvg)
-    // Ordem = maior MÉDIA FINAL ajustada (quem entrega muito e volta pouco sobe). Empate: SP da
-    // sprint atual. "Sem responsável" é balde, não pessoa — fica sempre por último.
+    // Ordem = maior MÉDIA GERAL ajustada (quem entrega muito e volta pouco sobe). Empate: janela das
+    // 3 últimas, depois SP da sprint atual. "Sem responsável" é balde, não pessoa — fica sempre por último.
     .sort((a,b)=>{if(a.name==='Sem responsável')return 1;if(b.name==='Sem responsável')return -1;
-      return (b.avgSP-a.avgSP)||(b.sp-a.sp);});
+      return (b.avgFull-a.avgFull)||(b.avgSP-a.avgSP)||(b.sp-a.sp);});
   // Cards com retrabalho por rejeição (sprint ativa): issues com 1+ transições para
   // CODE REVIEW REJECTED (código) ou REJECTED BY QA (QA), via changelog do Jira. Inclui
   // rejeições já corrigidas e reincidências — não é só o status atual.
@@ -1664,6 +1680,48 @@ function drawBurndown(sq){
    Antes eram duas abas (Sprint Plan / Detalhamento por Squad) com uma squad por vez. Agora tudo
    vive numa página só: resumos no topo (Overview + Índice de retorno) e, abaixo, uma seção completa
    por squad (Sprint Plan + Detalhamento). Os botões do header fixo rolam até a seção da squad. */
+// Move o parágrafo de método de cada painel (o <p class="panel-sub"> que abre o bloco, mais as notas
+// marcadas com class="panel-note") para dentro de um popover atrás de um botão "i" no título.
+// Feito em uma transformação sobre o HTML já montado, e não painel por painel, para valer também
+// para os painéis que forem criados depois — e para não espalhar markup de UI por 16 call sites.
+// Ficam FORA: avisos de estado no meio do painel (ex.: "Sprint encerrada.", "sem progressão diária")
+// e painéis cujo texto é todo o conteúdo (ex.: estado vazio de Dependências), que continuam à vista.
+let INFO_SEQ=0;
+function withInfoIcons(html){
+  const parts=String(html).split('<div class="panel"');
+  for(let i=1;i<parts.length;i++){
+    const p=parts[i];
+    const h=p.indexOf('</h2>');
+    if(h<0) continue;
+    const notes=[];
+    const rest=p.slice(h+5);
+    const lead=rest.match(/^\s*<p class="panel-sub"[^>]*>[\s\S]*?<\/p>/);
+    let body=lead?rest.slice(lead[0].length):rest;
+    if(lead) notes.push(lead[0].trim());
+    body=body.replace(/<p class="panel-note"[^>]*>[\s\S]*?<\/p>/g,m=>{notes.push(m);return '';});
+    if(!notes.length) continue;
+    if(!/<(?:table|canvas|ul|ol|div|p)\b/.test(body)) continue;   // painel ficaria vazio: mantém o texto
+    const id='inf'+(++INFO_SEQ);
+    parts[i]=p.slice(0,h)
+      +'<button type="button" class="info-i" data-info="'+id+'" aria-expanded="false" aria-controls="'+id+'"'
+      +' title="O que este bloco considera">i</button></h2>'
+      +'<div class="info-pop" id="'+id+'" hidden>'+notes.join('')+'</div>'
+      +body;
+  }
+  return parts.join('<div class="panel"');
+}
+function wireInfo(root){
+  (root||document).querySelectorAll('.info-i').forEach(b=>{
+    b.onclick=()=>{
+      const box=document.getElementById(b.getAttribute('data-info'));
+      if(!box) return;
+      const abrir=box.hasAttribute('hidden');
+      if(abrir) box.removeAttribute('hidden'); else box.setAttribute('hidden','');
+      b.setAttribute('aria-expanded', abrir?'true':'false');
+      b.classList.toggle('on', abrir);
+    };
+  });
+}
 function renderAll(){
   charts.forEach(c=>{try{c.destroy()}catch(e){}}); charts=[];
   const el=document.getElementById('app');
@@ -1675,7 +1733,8 @@ function renderAll(){
     '</section>';
   }
   html+=depsSectionHtml();   // última aba: dependências entre squads
-  el.innerHTML=html;
+  el.innerHTML=withInfoIcons(html);
+  wireInfo(el);
   for(const sq of SQUADS){ drawBurndown(sq); drawVelocity(sq.code); }
   // Tabelas com sprints em coluna abrem já roladas até o fim (sprint atual à vista)
   el.querySelectorAll('.table-scroll[data-scroll-end]').forEach(w=>{ w.scrollLeft=w.scrollWidth; });
@@ -1909,7 +1968,7 @@ function squadDetailHtml(curSquad){
         '</div>'+
         '<div class="kpi-card" style="margin:0"><div class="label">Retorno de QA por sprint</div><div style="display:flex;align-items:flex-end;gap:6px;height:82px;margin-top:8px">'+(sparks||'<span style="color:var(--text-disabled);font-size:11px">sem histórico</span>')+'</div></div>'+
       '</div>'+
-      '<p style="font-size:11px;color:var(--text-disabled);margin:10px 0 0">Média geral = ponderada por card (todos os cards de todas as sprints da squad), não média de médias — não distorce sprints pequenas. <strong>Escopo do índice:</strong> apenas cards (história/tarefa/bug) que pertencem a alguma sprint do board — <strong>subtarefas e cards sem sprint ficam fora</strong>, porque o índice é medido por sprint e na granularidade de card. Validado em 27/07/2026 contra o Jira (<code>status WAS "REJECTED BY QA"</code>): AE 2/2 e OE 19/19 conferem; na EE, 6 cards que passaram por rejeição estão fora do escopo (sem sprint ou subtarefa).</p>'+
+      '<p class="panel-note" style="font-size:11px;color:var(--text-disabled);margin:10px 0 0">Média geral = ponderada por card (todos os cards de todas as sprints da squad), não média de médias — não distorce sprints pequenas. <strong>Escopo do índice:</strong> apenas cards (história/tarefa/bug) que pertencem a alguma sprint do board — <strong>subtarefas e cards sem sprint ficam fora</strong>, porque o índice é medido por sprint e na granularidade de card. Validado em 27/07/2026 contra o Jira (<code>status WAS "REJECTED BY QA"</code>): AE 2/2 e OE 19/19 conferem; na EE, 6 cards que passaram por rejeição estão fora do escopo (sem sprint ou subtarefa).</p>'+
       '</div>';
     html+=reworkHtml;
     html+='<div class="panel"><h2>'+ico('user')+'Desempenho por Dev/QA — '+esc(sprintLabel(a))+'</h2>'+
@@ -1920,8 +1979,8 @@ function squadDetailHtml(curSquad){
       '<td>'+retPill((d.ret&&d.ret.cur)?d.ret.cur.irq:null)+'</td><td>'+retPill((d.ret&&d.ret.cur)?d.ret.cur.irc:null)+'</td></tr>'+
       qaRowHtml+
       '</tbody></table></div>'+
-      '<p style="font-size:11px;color:var(--text-disabled);margin:8px 0 0"><strong>↩︎ Ret. QA / Ret. código</strong> = retornos ÷ cards da pessoa que chegaram a cada estágio (0 é ótimo). Na linha de QA aparece a média da squad — o retrabalho que o QA absorve.</p>'+
-      (qaRowHtml?'<p style="font-size:11px;color:var(--text-disabled);margin:8px 0 0">'+ico('flask',13)+' A linha de QA é complementar (não soma no TOTAL devs). <strong>DEV</strong> = pontos alocados nas <strong>subtarefas</strong> (ou o <strong>Story point dev</strong> do card, quando não há subtarefa); <strong>QA</strong> = <strong>Story point QA</strong> das histórias, contabilizado quando a issue entra no fluxo de QA. São partes do mesmo Story Points (total = DEV + QA), medidas na granularidade real de cada uma — por isso podem não fechar exatamente com o escopo do card (subtarefas têm estimativa própria e o QA só entra ao chegar no fluxo de QA).</p>':'')+
+      '<p class="panel-note" style="font-size:11px;color:var(--text-disabled);margin:8px 0 0"><strong>↩︎ Ret. QA / Ret. código</strong> = retornos ÷ cards da pessoa que chegaram a cada estágio (0 é ótimo). Na linha de QA aparece a média da squad — o retrabalho que o QA absorve.</p>'+
+      (qaRowHtml?'<p class="panel-note" style="font-size:11px;color:var(--text-disabled);margin:8px 0 0">'+ico('flask',13)+' A linha de QA é complementar (não soma no TOTAL devs). <strong>DEV</strong> = pontos alocados nas <strong>subtarefas</strong> (ou o <strong>Story point dev</strong> do card, quando não há subtarefa); <strong>QA</strong> = <strong>Story point QA</strong> das histórias, contabilizado quando a issue entra no fluxo de QA. São partes do mesmo Story Points (total = DEV + QA), medidas na granularidade real de cada uma — por isso podem não fechar exatamente com o escopo do card (subtarefas têm estimativa própria e o QA só entra ao chegar no fluxo de QA).</p>':'')+
       '</div>';
     // Matriz Dev/QA × Sprint: entregas (e alocação) por sprint + média final
     const realS=list.filter(s=>!String(s.id).startsWith('bl-'));
@@ -1948,42 +2007,37 @@ function squadDetailHtml(curSquad){
     };
     const avgTip=(v,raw,pct)=>'bruto '+fmtSP(Math.round(raw*100)/100)+' SP · '+
       (v.isQAline?'linha de QA não sofre desconto':(pct>0?('desconto de retrabalho −'+pct+'%'):'sem desconto de retrabalho'));
-    // Coluna 1: janela móvel das 3 últimas fechadas (é a que ordena as linhas).
+    // Referência principal = MÉDIA GERAL (todas as sprints fechadas em que a pessoa participou), com as
+    // regras novas; a janela das 3 últimas fica como referência menor na terceira linha. Era o contrário
+    // até 31/08/2026 — a régua longa é mais estável (a janela move demais com uma sprint atípica).
     const avgCell=v=>{
-      const pct=Math.round(v.rwLoss*100);
+      const pct=Math.round(v.rwLossFull*100), pctW=Math.round(v.rwLoss*100);
       return '<td style="white-space:nowrap;background:rgba(78,203,113,.06)">'+
-        '<strong title="'+esc(avgTip(v,v.avgSPraw,pct))+'">'+fmtSP(Math.round(v.avgSP*100)/100)+' SP</strong> · '+(Math.round(v.avgN*10)/10)+' tarefas'+rwMark(v)+
-        '<br><small style="color:var(--text-secondary)">'+v.winN+' sprint(s) · '+esc(v.winLbl)+(pct>0?' · <span style="color:var(--laranja)">−'+pct+'%</span>':'')+'</small></td>';
-    };
-    // Coluna 2: média geral de TODAS as sprints fechadas em que participou, mesmas regras.
-    const avgAllCell=v=>{
-      const pct=Math.round(v.rwLossFull*100);
-      return '<td style="white-space:nowrap;background:rgba(120,120,120,.05)">'+
-        '<strong title="'+esc(avgTip(v,v.avgFullRaw,pct))+'">'+fmtSP(Math.round(v.avgFull*100)/100)+' SP</strong> · '+(Math.round(v.avgFullN*10)/10)+' tarefas'+
-        '<br><small style="color:var(--text-secondary)">'+v.partN+' fechada(s)'+(pct>0?' · <span style="color:var(--laranja)">−'+pct+'%</span>':'')+'</small></td>';
+        '<strong title="'+esc(avgTip(v,v.avgFullRaw,pct))+'">'+fmtSP(Math.round(v.avgFull*100)/100)+' SP</strong> · '+(Math.round(v.avgFullN*10)/10)+' tarefas'+rwMark(v)+
+        '<br><small style="color:var(--text-secondary)">'+v.partN+' sprint(s) fechada(s)'+(pct>0?' · <span style="color:var(--laranja)">−'+pct+'%</span>':'')+'</small>'+
+        '<br><small style="color:var(--text-disabled)" title="'+esc(v.winLbl+(pctW>0?' · desconto de retrabalho −'+pctW+'%':''))+'">3 últimas: '+fmtSP(Math.round(v.avgSP*100)/100)+' SP · '+(Math.round(v.avgN*10)/10)+' tarefas</small></td>';
     };
     html+='<div class="panel"><h2>'+ico('bars')+'Entregas por Dev/QA × Sprint</h2>'+
-      '<p class="panel-sub">Por sprint: <strong style="color:var(--verde)">entregue</strong> (SP · tarefas) e, abaixo, o <strong>alocado</strong>. Devs na <strong>parcela de DEV</strong> (subtarefas, ou o campo <em>Story point dev</em> nos cards sem subtarefa) — por isso o número é menor que o badge do backlog, que mostra o <em>Story Points total</em> = DEV + QA; linha de QA em <strong>Story point QA</strong>. Duas médias, com as mesmas regras e já com o <strong>desconto de retrabalho</strong>: <strong>Média final</strong> = as 3 últimas sprints fechadas em que a pessoa participou (o momento, e é por ela que as linhas estão ordenadas) e <strong>Média geral</strong> = todas as fechadas em que participou (a régua longa). Regras completas no rodapé do painel.</p>'+
-      '<div class="table-scroll" data-scroll-end="1"><table class="wide-sprints"><thead><tr><th>Dev / QA</th>'+realS.map(s=>'<th>'+esc(sprintLabel(s))+(s.state==='active'?' <span class="t-now">atual</span>':'')+'</th>').join('')+'<th>Média final /sprint<br><small style="font-weight:400;color:var(--text-disabled)">3 últimas fechadas</small></th>'+
-      '<th>Média geral /sprint<br><small style="font-weight:400;color:var(--text-disabled)">todas as fechadas</small></th></tr></thead><tbody>'+
+      '<p class="panel-sub">Por sprint: <strong style="color:var(--verde)">entregue</strong> (SP · tarefas) e, abaixo, o <strong>alocado</strong>. Devs na <strong>parcela de DEV</strong> (subtarefas, ou o campo <em>Story point dev</em> nos cards sem subtarefa) — por isso o número é menor que o badge do backlog, que mostra o <em>Story Points total</em> = DEV + QA; linha de QA em <strong>Story point QA</strong>. <strong>Média geral</strong> (número de cima) = entregue ÷ todas as sprints fechadas em que a pessoa participou, já com o <strong>desconto de retrabalho</strong>; é a referência principal e ordena as linhas. Abaixo, a mesma conta só nas <strong>3 últimas fechadas</strong>, como leitura do momento.</p>'+
+      '<div class="table-scroll" data-scroll-end="1"><table class="wide-sprints"><thead><tr><th>Dev / QA</th>'+realS.map(s=>'<th>'+esc(sprintLabel(s))+(s.state==='active'?' <span class="t-now">atual</span>':'')+'</th>').join('')+'<th>Média geral /sprint<br><small style="font-weight:400;color:var(--text-disabled)">todas as fechadas · 3 últimas abaixo</small></th></tr></thead><tbody>'+
       d.devs.map(v=>'<tr><td title="'+esc(v.name)+'"'+(v.name==='Sem responsável'?' style="color:var(--text-disabled);font-style:italic"':' style="font-weight:600"')+'>'+esc(shortName(v.name))+'</td>'+
-        realS.map(s=>cellD(v,s)).join('')+avgCell(v)+avgAllCell(v)+'</tr>').join('')+
-      ((q&&(q.n>0||q.histN>0))?('<tr class="qa-row"><td style="font-weight:600">'+ico('flask',14)+' '+esc(shortName(q.name))+' <span class="pill purple">Story point QA</span></td>'+realS.map(s=>cellD(q,s)).join('')+avgCell(q)+avgAllCell(q)+'</tr>'):'')+
+        realS.map(s=>cellD(v,s)).join('')+avgCell(v)+'</tr>').join('')+
+      ((q&&(q.n>0||q.histN>0))?('<tr class="qa-row"><td style="font-weight:600">'+ico('flask',14)+' '+esc(shortName(q.name))+' <span class="pill purple">Story point QA</span></td>'+realS.map(s=>cellD(q,s)).join('')+avgCell(q)+'</tr>'):'')+
       '</tbody></table></div>'+
       // Rodapé do painel: as regras da média final em uma nota curta (a legenda de cima ficou
       // impossível de ler depois de 4 mudanças de regra — 31/08/2026).
-      '<p style="font-size:11px;color:var(--text-disabled);margin:8px 0 0;line-height:1.55">'+
-        '<strong style="color:var(--text-secondary)">Como a média final é calculada.</strong> '+
+      '<p class="panel-note" style="font-size:11px;color:var(--text-disabled);margin:8px 0 0;line-height:1.55">'+
+        '<strong style="color:var(--text-secondary)">Como as médias são calculadas.</strong> '+
         '<strong>Sprint da entrega:</strong> data em que o card ficou pronto, lida do <em>changelog</em> (<code>resolutiondate</code> vem vazia no Jira) — card antigo que só fechou agora conta na sprint de agora. '+
         '<strong>Entregue:</strong> em DEV a subtarefa concluída já conta, mesmo com o card fora de DONE; em QA, só em DONE. '+
-        '<strong>Médias:</strong> a coluna <em>Média final</em> usa as '+(((d.win||{}).ids||[]).length||3)+' últimas fechadas em que a pessoa participou ('+esc((d.win||{}).lbl||'')+') — as primeiras sprints da squad quase não têm entrega creditada e achatavam a média de todos; a coluna <em>Média geral</em> usa todas as '+closedCnt+' fechadas, com os mesmos critérios. '+
+        '<strong>Médias:</strong> o número principal divide o entregue pelas sprints fechadas em que a pessoa <em>participou</em> — não pelas '+closedCnt+' da squad, para não penalizar quem entrou depois. A linha menor repete a conta nas '+(((d.win||{}).ids||[]).length||3)+' últimas ('+esc((d.win||{}).lbl||'')+'), útil porque as primeiras sprints da squad quase não têm entrega creditada e puxam a geral para baixo. '+
         '<strong>Retrabalho:</strong> cada retorno de QA ou de code review desconta 25% dos SP daquele card (teto de 50%) — card que passou limpo não perde nada. A bolinha é a faixa de retrabalho da pessoa (verde = nenhum retorno; vazada = QA, isenta, ou board sem retorno registrado) e o −x%, o desconto aplicado; o mouse mostra a conta. '+
-        '<strong>Ordem:</strong> maior média final.</p>'+
+        '<strong>Ordem:</strong> maior média geral.</p>'+
       // Sprints que só existem como BASELINE oficial (não estão mais nos campos atuais do Jira)
       // não têm quebra por dev — explicitamos em vez de deixar a coluna sumir sem explicação.
       (()=>{const bl=list.filter(s=>String(s.id).startsWith('bl-'));
         if(!bl.length) return '';
-        return '<p style="font-size:11px;color:var(--text-disabled);margin:8px 0 0">'+
+        return '<p class="panel-note" style="font-size:11px;color:var(--text-disabled);margin:8px 0 0">'+
           bl.map(s=>esc(sprintLabel(s))).join(', ')+' não aparece nesta matriz: essa sprint <strong>não existe no board '+((d.squad&&d.squad.board)||'da squad')+'</strong> (rodou no board compartilhado, antes da squad ter board próprio), então o Jira não permite atribuir as entregas por pessoa. '+
           'Dela só existe o <strong>baseline oficial da squad</strong> ('+bl.map(s=>esc(sprintLabel(s))+': '+fmtSP(s.delivered)+' SP entregues').join(' · ')+'), que aparece em Métricas-chave e na Velocity. '+
           'Reconstruir por dev com os campos de hoje daria números inflados (na AE, 126,5 SP contra os 44,5 SP oficiais), por isso não fazemos.</p>';})()+
@@ -2290,7 +2344,8 @@ function wireDeps(){
   const b=document.getElementById('depBody'); if(!b) return;
   b.querySelectorAll('[data-depview]').forEach(btn=>btn.onclick=()=>{
     DEP_VIEW=btn.dataset.depview;
-    b.innerHTML=depsBodyHtml();
+    b.innerHTML=withInfoIcons(depsBodyHtml());
+    wireInfo(b);
     wireDeps();
   });
 }
