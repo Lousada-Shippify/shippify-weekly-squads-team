@@ -1879,7 +1879,10 @@ function squadDetailHtml(curSquad){
   if(d.devs&&d.devs.length){
     const totD={n:0,dn:0,sp:0,dsp:0,isp:0,tsp:0,noSP:0,histSP:0,histN:0,rejCode:0,rejQA:0,baseQA:0,baseCR:0};
     const rowsD=d.devs.map(v=>{
-      Object.keys(totD).forEach(k=>totD[k]+=v[k]||0);
+      Object.keys(totD).forEach(k=>totD[k]+=v[k]||0);   // soma primeiro: o TOTAL não muda com a linha oculta
+      // Linha inteira de zeros só ocupa espaço: "Sem responsável" entra apenas quando há item ou SP
+      // sem dono na sprint mostrada (o histórico dela não conta aqui — esta tabela é de UMA sprint).
+      if(v.name==='Sem responsável' && !(v.n||v.dn||v.sp||v.dsp||v.isp||v.tsp||v.noSP)) return '';
       const p=v.sp>0?pct(v.dsp,v.sp):null;
       return '<tr><td class="col-name" title="'+esc(v.name)+'"'+(v.name==='Sem responsável'?' style="color:var(--text-disabled);font-style:italic"':' style="font-weight:600"')+'>'+esc(shortName(v.name))+'</td>'+
         '<td>'+v.n+'</td><td>'+v.dn+'</td><td>'+fmtSP(v.sp)+'</td><td style="color:var(--verde);font-weight:600">'+fmtSP(v.dsp)+'</td>'+
