@@ -1051,6 +1051,20 @@ function processSquad(sq, nodes, report){
       if(doneIn(r)){g.dn++; g.dsp+=r.sp;}
       else if(!active.past&&r.cat==='indeterminate'){g.inN++; g.insp+=r.sp;}
     }
+    // Totais do épico/tag INTEIRO (todas as sprints do dataset), por status ATUAL. É este o número
+    // que o Jira mostra no painel "Child work items" do épico — e ele conta ISSUES, não SP. O % da
+    // linha acima é dos SP DESTA sprint; sem os dois lado a lado o mesmo épico aparecia como 56%
+    // (Sprint 9), 33% (Sprint 10) e 76% (Jira) sem que nada estivesse errado. Ressalva: o dataset só
+    // traz cards COM sprint, então um filho do épico nunca planejado fica de fora desta linha.
+    const gAll={};
+    for(const r of recs){
+      if(r.cancelled) continue;
+      const tg=(r.summary.match(/^\s*\[([^\]]{2,30})\]/)||[])[1];
+      const kk=r.epic||tg||'Outros / avulsos';
+      const ga=gAll[kk]=gAll[kk]||{n:0,sp:0,dn:0,dsp:0};
+      ga.n++; ga.sp+=r.sp; if(r.cat==='done'){ga.dn++; ga.dsp+=r.sp;}
+    }
+    for(const k of Object.keys(gm)) gm[k].all=gAll[k]||null;
     active.deliveries=Object.entries(gm).sort((a,b)=>b[1].sp-a[1].sp);
     active.doneList=acts.filter(doneIn).map(r=>({key:r.key,summary:r.summary,sp:r.sp}));
     // Breakdown do trabalho EM ANDAMENTO por status — UNIDADE DE TRABALHO (folha da árvore).
@@ -1574,14 +1588,31 @@ function squadPlanHtml(sq){
       ((items&&items.length)
         ? items.map(i=>'<div class="dg dg-'+i.sev+'"><i></i><span>'+i.text+'</span></div>').join('')
         : '<span class="t-dim">Sem apontamentos.</span>')+'</td></tr>';
-    const delivHtml=(a.deliveries||[]).slice(0,7).map(([nm,g])=>{
+    // O % da linha é sempre "SP entregues ÷ SP DESTA sprint". Numa sprint FECHADA o bucket aberto
+    // não é "não iniciada": o in-progress é zerado de propósito (o status de hoje já é o de outra
+    // sprint), então tudo que não foi entregue cai ali — inclusive card que estava em CODE REVIEW e
+    // virou carryover. Chamar isso de "não iniciada" era falso; em sprint fechada o rótulo é
+    // "não entregue(s)".
+    const delivRows=(a.deliveries||[]).slice(0,7).map(([nm,g])=>{
       const p=pct(g.dsp,g.sp), pi=pct(g.insp,g.sp);
       const tN=g.n-g.dn-g.inN, tSP=g.sp-g.dsp-g.insp;
-      return '<div class="deliv">• <strong>'+esc(nm)+'</strong> — '+fmtSP(g.sp)+' SP · '+g.n+' issues <span class="pill '+(p>=70?'green':(p>=30?'yellow':'blue'))+'">'+p+'% done</span>'+
+      const openLbl=a.past?'não entregue(s)':'não iniciada(s)';
+      const ga=g.all;
+      // O % por issues usa FLOOR, não pct() (que arredonda): o Jira TRUNCA. INF-182 com 10/13 filhos
+      // concluídos = 76,9% → o Jira mostra 76%; arredondando daria 77% e a linha erraria por 1 p.p.
+      // justamente o número que ela promete reproduzir.
+      const epicLine=(ga&&ga.n>g.n)
+        ? '<br><small class="brk" style="color:var(--text-secondary)">no épico inteiro (todas as sprints): '+ga.dn+'/'+ga.n+' issues = '+Math.floor(ga.dn/ga.n*100)+'% · '+fmtSP(ga.dsp)+'/'+fmtSP(ga.sp)+' SP = '+pct(ga.dsp,ga.sp)+'% — é este o % que o Jira mostra no épico</small>'
+        : '';
+      return '<div class="deliv">• <strong>'+esc(nm)+'</strong> — '+fmtSP(g.sp)+' SP · '+g.n+' issues <span class="pill '+(p>=70?'green':(p>=30?'yellow':'blue'))+'" title="SP entregues nesta sprint ÷ SP desta sprint">'+p+'% dos SP da sprint</span>'+
         '<div class="sbar"><div style="background:var(--verde);width:'+p+'%"></div><div style="background:var(--turquesa);width:'+pi+'%"></div></div>'+
-        '<small class="brk">'+g.dn+' concluída(s) ('+fmtSP(g.dsp)+' SP) · '+g.inN+' em andamento ('+fmtSP(g.insp)+' SP) · '+tN+' não iniciada(s) ('+fmtSP(tSP)+' SP)</small>'+
+        '<small class="brk">'+g.dn+' concluída(s) ('+fmtSP(g.dsp)+' SP) · '+g.inN+' em andamento ('+fmtSP(g.insp)+' SP) · '+tN+' '+openLbl+' ('+fmtSP(tSP)+' SP)</small>'+
+        epicLine+
         (g.ex.length?'<br><small class="brk" style="color:var(--text-disabled)">↳ '+esc(g.ex.map(s=>s.slice(0,80)).join(' · '))+'</small>':'')+'</div>';
-    }).join('')||'—';
+    }).join('');
+    const delivHtml=delivRows
+      ? delivRows+'<div class="brk" style="font-size:var(--fs-label);color:var(--text-disabled);margin-top:var(--sp-05)">% da linha = SP entregues ÷ SP <strong>desta sprint</strong>. O “% Done” do épico no Jira conta <strong>issues do épico inteiro</strong>, todas as sprints — os dois números não são comparáveis.</div>'
+      : '—';
     const doneListHtml=(a.doneList&&a.doneList.length)
       ? a.doneList.slice(0,10).map(t=>'<div class="deliv">'+ico('check',14)+' <strong>'+esc(t.key)+'</strong> — '+esc(t.summary.slice(0,90))+' <small style="color:var(--text-secondary)">('+fmtSP(t.sp)+' SP)</small></div>').join('')
         +(a.doneList.length>10?'<small class="brk">… +'+(a.doneList.length-10)+' tarefas</small>':'')
