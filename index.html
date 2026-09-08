@@ -2106,35 +2106,58 @@ function drawVelocity(code){
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════════
-   ABA DEPENDÊNCIAS (20/08/2026) — quem espera ação de INF / SRG
+   ABA DEPENDÊNCIAS — quem espera a entrega de outra tarefa
+   (20/08/2026 · ampliada em 08/09/2026 para os links "Blocks")
 
-   REGRA DE LEITURA (definida com Vitor em 20/08/2026): a direção literal do link
-   "Action item" no Jira NÃO é confiável — o mesmo tipo aparece gravado nos dois
-   sentidos (AE-290 → SEC-184, INF-131 → SEC-189, mas INF-125 ← INFRA-2470). Então
-   quem ENTREGA é definido por PRECEDÊNCIA DE PROJETO: SRG (projeto SEC) entrega para
-   todos; INF entrega para AE/EE/OE. O outro lado do par é quem ESPERA. Pares sem
-   provedor INF/SRG, ou cujo lado que espera não é uma das 4 squads, ficam fora do
-   recorte (o total aparece na nota de método, para não sumir silenciosamente).
-   A direção crua do Jira é exibida em cada linha para auditoria dos cards.
+   DOIS TIPOS DE VÍNCULO, DUAS REGRAS DE DIREÇÃO:
 
-   ETA (quando a tarefa volta para a squad que espera): duedate do card provedor; se
-   não houver, a data final da sprint dele, marcada com "≈" (estimativa); sem as duas,
-   entra em "sem previsão". Regra escolhida porque hoje quase nenhum card tem duedate.
+   1) "Blocks" ("bloqueia" / "é bloqueada por") — aqui a direção gravada no Jira É
+      CONFIÁVEL e é a que manda: dir==='out' ⇒ a issue consultada BLOQUEIA a outra
+      (provedor = ela); dir==='in' ⇒ ela É BLOQUEADA pela outra (provedor = a outra).
+      Foi o cenário trazido pelo Vitor em 08/09/2026: OE-211 está em BLOCKED porque
+      "foi bloqueado por" INF-541, e o par era invisível nesta aba — a consulta só
+      pedia "Action item", então cards cujo único vínculo é Blocks nunca chegavam ao
+      front (INF-541 e OE-211 não estavam no bloco deps do data.json de 02/09/2026).
+      Vale para qualquer par, inclusive OE↔OE, então aparecem também as correntes
+      internas de backlog — separadas pelo recorte DEP_SCOPE, abaixo.
 
-   Tipos de link considerados: só "Action item" por enquanto — DEP_LINK_RE aceita mais
-   tipos (ex.: /action\s*item|blocks/i) quando Vitor mandar a lista completa. */
-const DEP_LINK_RE = /action\s*item/i;
+   2) "Action item" — a direção literal NÃO é confiável: o mesmo tipo aparece gravado
+      nos dois sentidos (AE-290 → SEC-184, INF-131 → SEC-189, mas INF-125 ← INFRA-2470).
+      Para esses, quem ENTREGA continua definido por PRECEDÊNCIA DE PROJETO: SRG
+      (projeto SEC) entrega para todos; INF entrega para AE/EE/OE. Pares Action item
+      dentro do mesmo projeto ficam fora (não há como decidir a direção) e entram na
+      contagem de descartados da nota de método, para não sumirem silenciosamente.
+
+   RECORTE DE VÍNCULO (DEP_SCOPE): 'cross' = provedor e quem espera em squads diferentes
+   — é a dependência de time que a aba se propõe a mostrar, e é o padrão; 'intra' =
+   corrente dentro da própria squad, que é sequenciamento de backlog (AE-532 sozinha
+   bloqueia 11 cards de AE, e sem separar isso o sinal de INF desaparecia); 'all' = os dois.
+
+   ETA (quando a tarefa volta para quem espera): duedate do card provedor; se não houver,
+   a data final da sprint dele, marcada com "≈" (estimativa); sem as duas, "sem previsão".
+
+   Em qualquer um dos casos, quem ESPERA tem de ser AE/EE/OE/INF — a lista de squads do
+   painel. A direção crua do Jira é impressa em cada linha para auditoria dos cards. */
+const DEP_LINK_RE  = /action\s*item|^blocks$/i;   // tipos de link lidos
+const DEP_BLOCK_RE = /^blocks$/i;                 // nesses, a direção do Jira é autoritativa
 const DEP_SQUAD_BY_PROJECT = {AE:'AE', EE:'EE', OE:'OE', INF:'INF', SEC:'SRG'};
-const DEP_RANK = {SRG:2, INF:1};          // precedência de provedor: SRG > INF
+const DEP_RANK = {SRG:2, INF:1};          // precedência de provedor — SÓ para Action item
 const DEP_WAITERS = ['AE','EE','OE','INF'];
-const DEP_PROVIDERS = [
-  {code:'SRG', name:'SRG — Security, Reliability & Governance', project:'SEC', board:405},
-  {code:'INF', name:'Infrastructure',                           project:'INF', board:476},
-];
+const DEP_SQUAD_META = {
+  SRG:{name:'SRG — Security, Reliability & Governance', project:'SEC', board:405},
+  INF:{name:'Infrastructure',                           project:'INF', board:476},
+  OE: {name:'Operation Experience',                     project:'OE',  board:474},
+  AE: {name:'Apps Experience',                          project:'AE',  board:479},
+  EE: {name:'Ecosystem Experience',                     project:'EE',  board:475},
+};
+const DEP_PROV_ORDER = ['SRG','INF','OE','AE','EE'];   // ordem dos blocos de provedor
+const DEP_PILL = {SRG:'purple', INF:'purple', OE:'blue', AE:'blue', EE:'blue'};
+const depPill = sq => DEP_PILL[sq] || 'gray';
 const DEP_SQUAD_NAME = {AE:'Apps Experience', EE:'Ecosystem Experience', OE:'Operation Experience',
                         INF:'Infrastructure', SRG:'SRG'};
 let DEPS = null;            // saída de processDeps
 let DEP_VIEW = 'open';      // 'open' (padrão — só o que ainda bloqueia) | 'all' (histórico)
+let DEP_SCOPE = 'cross';    // 'cross' (padrão) | 'intra' | 'all'
 
 const depToday = () => { const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
 const depDate  = iso => iso ? new Date(iso+'T00:00:00') : null;
@@ -2190,14 +2213,25 @@ function processDeps(raw){
   for(const iss of issues){
     for(const l of (iss.links||[])){
       if(!l || !l.key || !DEP_LINK_RE.test(l.type||'')) continue;
-      const id=[iss.key,l.key].sort().join('~');
+      const isBlk = DEP_BLOCK_RE.test(l.type||'');
+      // O tipo entra na chave de dedupe: duas issues podem ter Blocks E Action item entre si,
+      // e são dois fatos diferentes.
+      const id=(isBlk?'B:':'A:')+[iss.key,l.key].sort().join('~');
       if(seen.has(id)) continue; seen.add(id);
       const sA=squadOf(iss.key), sB=squadOf(l.key);
       let pk,wk,ps,ws;
-      if(rank(sA)>rank(sB)){ pk=iss.key; wk=l.key; ps=sA; ws=sB; }
+      if(isBlk){
+        // Direção do Jira manda: 'out' = esta issue bloqueia a outra; 'in' = é bloqueada por ela.
+        if(l.dir==='out'){ pk=iss.key; wk=l.key;   ps=sA; ws=sB; }
+        else             { pk=l.key;   wk=iss.key; ps=sB; ws=sA; }
+      }
+      else if(rank(sA)>rank(sB)){ pk=iss.key; wk=l.key; ps=sA; ws=sB; }
       else if(rank(sB)>rank(sA)){ pk=l.key; wk=iss.key; ps=sB; ws=sA; }
       else { skipped++; bump(String(iss.key).split('-')[0],String(l.key).split('-')[0]); continue; }
       if(DEP_WAITERS.indexOf(ws)<0){ skipped++; bump(String(wk).split('-')[0],String(pk).split('-')[0]); continue; }
+      // Provedor num projeto fora das 5 do recorte (ex.: INFRA, QUAL): mantém o par e usa o
+      // código do projeto como rótulo, em vez de descartar um bloqueio real.
+      if(!ps) ps=String(pk).split('-')[0];
       const P = byKey[pk]||null, W = byKey[wk]||null;
       const prov = depSide(pk, P, pk===l.key?l:null, ps);
       const wait = depSide(wk, W, wk===l.key?l:null, ws);
@@ -2212,28 +2246,61 @@ function processDeps(raw){
       // card que espera já está concluído (o time achou outro caminho, ou fechou sem a entrega),
       // o par deixa de ser bloqueio ativo e vira histórico — foi o caso de AE-290 e INF-410/411/412,
       // todos Concluídos com SEC-184 ainda Em andamento (medido em 20/08/2026).
-      pairs.push({id, prov, wait, eta, done, waitDone, blocking: !done && !waitDone, late: late && !waitDone,
-                  linkType:l.type||'Action item',
-                  rawLabel: rawFrom+' has action item '+rawTo,
-                  rawInverted: rawFrom!==pk});
+      pairs.push({id, prov, wait, eta, done, waitDone,
+                  blocking: !done && !waitDone, late: late && !waitDone,
+                  kind: isBlk ? 'blocks' : 'action',
+                  scope: ps===ws ? 'intra' : 'cross',
+                  linkType: l.type||'',
+                  rawLabel: isBlk ? (rawFrom+' blocks '+rawTo) : (rawFrom+' has action item '+rawTo),
+                  rawInverted: !isBlk && rawFrom!==pk});
     }
   }
-  // Agrupamentos
-  const byProvider={}; DEP_PROVIDERS.forEach(p=>{byProvider[p.code]={ticket:{}, order:[]};});
+  const counts = {
+    total: pairs.length,
+    cross: pairs.filter(p=>p.scope==='cross').length,
+    intra: pairs.filter(p=>p.scope==='intra').length,
+    blocksLinks: pairs.filter(p=>p.kind==='blocks').length,
+    actionLinks: pairs.filter(p=>p.kind==='action').length,
+    inverted: pairs.filter(p=>p.rawInverted).length,
+    skipped, skippedBy,
+  };
+  return {pairs, counts, generatedAt:(raw&&raw.generatedAt)||null};
+}
+
+/* Agregações do recorte ativo. Antes viviam dentro de processDeps, mas com o recorte
+   cross/intra a lista de provedores, os KPIs e a tabela por squad mudam a cada clique —
+   então são recalculados sobre o subconjunto visível, não uma vez só na carga. */
+function depAgg(pairs){
+  const byProvider={}, provOrder=[];
   const byWaiter={};   DEP_WAITERS.forEach(w=>{byWaiter[w]={n:0, open:0, provs:{}, next:null};});
   for(const p of pairs){
-    const g=byProvider[p.prov.squad]; if(g){
-      if(!g.ticket[p.prov.key]){ g.ticket[p.prov.key]={prov:p.prov, eta:p.eta, done:p.done, late:p.late, blocking:0, waits:[]}; g.order.push(p.prov.key); }
-      g.ticket[p.prov.key].waits.push(p);
-      if(p.blocking) g.ticket[p.prov.key].blocking++;
-    }
+    if(!byProvider[p.prov.squad]){ byProvider[p.prov.squad]={ticket:{}, order:[]}; provOrder.push(p.prov.squad); }
+    const g=byProvider[p.prov.squad];
+    if(!g.ticket[p.prov.key]){ g.ticket[p.prov.key]={prov:p.prov, eta:p.eta, done:p.done, late:p.late, blocking:0, waits:[]}; g.order.push(p.prov.key); }
+    g.ticket[p.prov.key].waits.push(p);
+    if(p.blocking) g.ticket[p.prov.key].blocking++;
     const w=byWaiter[p.wait.squad]; if(w){
       w.n++; if(p.blocking){ w.open++; w.provs[p.prov.squad]=(w.provs[p.prov.squad]||0)+1;
         if(p.eta.date && (!w.next || p.eta.date<w.next)) w.next=p.eta.date; }
     }
   }
+  // Provedores externos (SRG, INF) primeiro: é neles que a squad não tem alçada para agir.
+  provOrder.sort((a,b)=>{
+    const ia=DEP_PROV_ORDER.indexOf(a), ib=DEP_PROV_ORDER.indexOf(b);
+    return ((ia<0?99:ia)-(ib<0?99:ib)) || (a<b?-1:(a>b?1:0));
+  });
+  // Dentro de cada provedor: bloqueando primeiro, depois por ETA mais próxima.
+  for(const code of provOrder){
+    const g=byProvider[code];
+    g.order.sort((a,b)=>{
+      const ta=g.ticket[a], tb=g.ticket[b];
+      if((tb.blocking>0)-(ta.blocking>0)) return (tb.blocking>0)-(ta.blocking>0);
+      const da=ta.eta.date||'9999-12-31', db=tb.eta.date||'9999-12-31';
+      return da<db?-1:(da>db?1:(a<b?-1:1));
+    });
+  }
   const blocking = pairs.filter(p=>p.blocking);
-  const counts = {
+  return {byProvider, provOrder, byWaiter, c:{
     total: pairs.length, blocking: blocking.length,
     released: pairs.filter(p=>p.done).length,
     noImpact: pairs.filter(p=>!p.done&&p.waitDone).length,
@@ -2241,10 +2308,7 @@ function processDeps(raw){
     noEta: blocking.filter(p=>!p.eta.date).length,
     late: blocking.filter(p=>p.late).length,
     squadsBlocked: DEP_WAITERS.filter(w=>byWaiter[w].open>0).length,
-    inverted: pairs.filter(p=>p.rawInverted).length,
-    skipped, skippedBy,
-  };
-  return {pairs, byProvider, byWaiter, counts, generatedAt:(raw&&raw.generatedAt)||null};
+  }};
 }
 
 /* ---------- render da aba ---------- */
@@ -2257,32 +2321,44 @@ function depsSectionHtml(){
 function depsBodyHtml(){
   if(!DEPS) return '<div class="panel"><h2>'+ico('loop')+'Dependências entre squads</h2>'+
     '<p class="panel-sub">O bloco <code>deps</code> ainda não chegou nos dados. O front já sabe montar a aba — falta a fonte trazer os links: no <strong>tempo real</strong>, colar o <code>worker.js</code> novo no Cloudflare (Quick edit → Deploy); no <strong>snapshot</strong>, rodar o workflow <em>Update data</em> depois de publicar o <code>build.mjs</code> novo. Enquanto isso esta aba fica em espera, sem afetar o resto do painel.</p></div>';
-  const c=DEPS.counts;
-  const view=DEP_VIEW==='all'?DEPS.pairs:DEPS.pairs.filter(p=>p.blocking);
+  const meta=DEPS.counts;
+  const scoped=DEPS.pairs.filter(p=>DEP_SCOPE==='all'?true:p.scope===DEP_SCOPE);
+  const A=depAgg(scoped), c=A.c;
+  const view=DEP_VIEW==='all'?scoped:scoped.filter(p=>p.blocking);
+  const scopeLabel=DEP_SCOPE==='cross'?'entre squads':(DEP_SCOPE==='intra'?'internas da squad':'entre squads + internas');
+  const blkN=sc=>DEPS.pairs.filter(p=>p.blocking&&(sc==='all'||p.scope===sc)).length;
   let html='<div class="panel"><h2>'+ico('loop')+'Panorama'+
     '<span class="pill '+(c.late?'red':(c.blocking?'yellow':'green'))+'">'+c.blocking+' bloqueio'+(c.blocking===1?'':'s')+' ativo'+(c.blocking===1?'':'s')+'</span></h2>'+
-    '<p class="panel-sub">Tarefas das squads que só fecham depois de uma ação de <strong>INF</strong> ou <strong>SRG</strong>, lidas dos links <strong>Action item</strong> do Jira. Quem entrega é definido por precedência de projeto (SRG entrega para todos; INF entrega para AE/EE/OE) — a direção crua do link aparece em cada linha, porque no Jira ela está gravada nos dois sentidos. <strong>Bloqueio ativo</strong> = provedor ainda não entregou <em>e</em> o card que espera continua aberto.</p>'+
+    '<p class="panel-sub">Tarefas que só fecham depois de outra tarefa terminar, lidas dos links <strong>Blocks</strong> ("bloqueia" / "é bloqueada por") e <strong>Action item</strong> do Jira nos projetos AE, EE, OE, INF e SEC. Nos <strong>Blocks</strong> a direção gravada no Jira é a que vale — é o cenário de <a href="'+depIssueUrl('OE-211')+'" target="_blank">OE-211</a>, que está em BLOCKED porque foi bloqueada por <a href="'+depIssueUrl('INF-541')+'" target="_blank">INF-541</a>. Nos <strong>Action item</strong> a direção do Jira é inconsistente, então quem entrega vem por precedência de projeto (SRG entrega para todos; INF entrega para AE/EE/OE). <strong>Bloqueio ativo</strong> = o provedor ainda não entregou <em>e</em> o card que espera continua aberto. Recorte de vínculo: <strong>'+esc(scopeLabel)+'</strong>.</p>'+
     (window.__DEPSRC__==='snapshot'?'<p class="panel-sub">'+ico('alert',13)+' Os vínculos desta aba vêm do <strong>snapshot horário</strong>'+(window.__DEPGEN__?' ('+new Date(window.__DEPGEN__).toLocaleString('pt-BR')+')':'')+': o proxy em tempo real ainda roda a versão anterior do Worker, sem o bloco <code>deps</code>. As métricas das squads acima continuam ao vivo.</p>':'')+
     '<div class="kpi-grid">'+
-      kpi('Bloqueios ativos', String(c.blocking), c.total+' pares no histórico')+
-      kpi('Squads bloqueadas', String(c.squadsBlocked)+'<span style="font-size:var(--fs-cap)">/'+DEP_WAITERS.length+'</span>', 'aguardando INF ou SRG')+
+      kpi('Bloqueios ativos', String(c.blocking), c.total+' pares neste recorte')+
+      kpi('Squads bloqueadas', String(c.squadsBlocked)+'<span style="font-size:var(--fs-cap)">/'+DEP_WAITERS.length+'</span>', 'esperando entrega de outra tarefa')+
       kpi('Com data prevista', String(c.withEta), c.noEta+' sem previsão')+
       kpi('Vencidos', String(c.late), c.late?'data prevista já passou':'nenhuma data no passado', c.late?'crit':null)+
       kpi('Já liberadas', String(c.released), c.noImpact+' seguiram sem esperar')+
     '</div></div>';
+  html+='<div class="dep-toolbar"><span class="micro t-sec">Vínculo:</span>'+
+    '<button data-depscope="cross"'+(DEP_SCOPE==='cross'?' class="active"':'')+'>Entre squads ('+blkN('cross')+')</button>'+
+    '<button data-depscope="intra"'+(DEP_SCOPE==='intra'?' class="active"':'')+'>Internas da squad ('+blkN('intra')+')</button>'+
+    '<button data-depscope="all"'+(DEP_SCOPE==='all'?' class="active"':'')+'>Tudo ('+blkN('all')+')</button></div>';
   html+='<div class="dep-toolbar"><span class="micro t-sec">Recorte:</span>'+
     '<button data-depview="open"'+(DEP_VIEW==='open'?' class="active"':'')+'>Bloqueios ativos ('+c.blocking+')</button>'+
     '<button data-depview="all"'+(DEP_VIEW==='all'?' class="active"':'')+'>Todas, com histórico ('+c.total+')</button></div>';
-  // Visão por squad provedora
-  for(const pv of DEP_PROVIDERS){
-    const g=DEPS.byProvider[pv.code]||{ticket:{},order:[]};
+  // Visão por squad provedora. A lista de provedores é montada a partir dos pares do recorte:
+  // com os links Blocks qualquer squad pode ser provedora, não só INF e SRG.
+  let printed=0;
+  for(const code of A.provOrder){
+    const m=DEP_SQUAD_META[code]||{name:code+' (projeto fora do recorte)', project:code, board:null};
+    const g=A.byProvider[code];
     const keys=g.order.filter(k=>DEP_VIEW==='all' ? true : g.ticket[k].blocking>0);
+    if(!keys.length) continue;
+    printed++;
     const openN=g.order.filter(k=>g.ticket[k].blocking>0).length;
-    html+='<div class="panel"><h2>'+ico('box')+'Ação pendente de '+esc(pv.code)+' — '+esc(pv.name)+
+    html+='<div class="panel"><h2>'+ico('box')+'Ação pendente de '+esc(code)+' — '+esc(m.name)+
       '<span class="pill '+(openN?'yellow':'green')+'">'+openN+' ticket'+(openN===1?'':'s')+' bloqueando</span></h2>'+
-      '<p class="panel-sub">Cada bloco é um card de '+esc(pv.code)+' (projeto '+esc(pv.project)+'); abaixo dele, quem está esperando por ele. '+
-      '<a href="https://shippify.atlassian.net/jira/software/c/projects/'+esc(pv.project)+'/boards/'+pv.board+'" target="_blank">abrir board '+pv.board+' '+ico('external',12)+'</a></p>';
-    if(!keys.length){ html+='<p class="deliv t-sec">'+ico('check',14)+' Nada pendente deste time no recorte atual.</p>'; }
+      '<p class="panel-sub">Cada bloco é um card de '+esc(code)+' (projeto '+esc(m.project)+'); abaixo dele, quem está esperando por ele. '+
+      (m.board?'<a href="https://shippify.atlassian.net/jira/software/c/projects/'+esc(m.project)+'/boards/'+m.board+'" target="_blank">abrir board '+m.board+' '+ico('external',12)+'</a>':'')+'</p>';
     for(const k of keys){
       const t=g.ticket[k], e=t.eta;
       const etaTxt = t.done ? ('liberado'+(t.prov.resolved?' em '+depDdmm(t.prov.resolved):''))
@@ -2298,21 +2374,23 @@ function depsBodyHtml(){
         '</div><div class="micro t-sec">'+esc(t.prov.summary)+'</div>'+
         '<div class="dep-wait-list">';
       for(const p of t.waits.filter(x=>DEP_VIEW==='all'||x.blocking)){
-        html+='<div class="dep-wait"><span class="pill '+(p.wait.squad==='INF'?'purple':'blue')+'">'+esc(p.wait.squad)+'</span>'+
+        html+='<div class="dep-wait"><span class="pill '+depPill(p.wait.squad)+'">'+esc(p.wait.squad)+'</span>'+
           '<a href="'+depIssueUrl(p.wait.key)+'" target="_blank"><strong>'+esc(p.wait.key)+'</strong></a>'+
           '<span>'+esc(p.wait.summary.slice(0,90))+(p.wait.summary.length>90?'…':'')+'</span>'+
           depStatusPill(p.wait.cat,p.wait.status)+
           (p.wait.sprint?'<span class="micro t-sec">'+esc(p.wait.sprint)+'</span>':'')+
-          '<span class="micro" style="color:var(--text-disabled)" title="direção como está gravada no Jira">'+esc(p.rawLabel)+'</span>'+
+          '<span class="micro" style="color:var(--text-disabled)" title="tipo e direção do vínculo como estão gravados no Jira">'+esc(p.rawLabel)+'</span>'+
           '</div>';
       }
       html+='</div></div>';
     }
     html+='</div>';
   }
+  if(!printed) html+='<div class="panel"><h2>'+ico('check')+'Sem dependências neste recorte</h2>'+
+    '<p class="panel-sub">Nenhum vínculo Blocks ou Action item bate com o recorte <strong>'+esc(scopeLabel)+'</strong> na visão selecionada.</p></div>';
   // Gantt
   html+='<div class="panel"><h2>'+ico('clock')+'Quando volta para quem espera</h2>'+
-    '<p class="panel-sub">Barra = tempo até a tarefa do provedor ficar disponível de novo para a squad que aguarda. Data cheia = <strong>duedate</strong> do card; borda tracejada e "≈" = <strong>fim da sprint</strong> do provedor (estimativa). A linha vertical vermelha é hoje; barras em vermelho já passaram da data.</p>'+
+    '<p class="panel-sub">Barra = tempo até a tarefa do provedor ficar disponível de novo para quem aguarda. Data cheia = <strong>duedate</strong> do card; borda tracejada e "≈" = <strong>fim da sprint</strong> do provedor (estimativa). A linha vertical vermelha é hoje; barras em vermelho já passaram da data.</p>'+
     depGanttHtml(view.filter(p=>p.blocking&&p.eta.date))+'</div>';
   // Sem previsão
   const noEta=view.filter(p=>p.blocking&&!p.eta.date);
@@ -2320,27 +2398,29 @@ function depsBodyHtml(){
     html+='<div class="panel"><h2>'+ico('alert')+'Sem data de conclusão sinalizada'+
       '<span class="pill yellow">'+noEta.length+'</span></h2>'+
       '<p class="panel-sub">Nem <strong>duedate</strong> nem sprint no card do provedor — não há como dizer quando volta. Preencher a data de conclusão nesses cards é o que coloca cada linha no gráfico acima.</p>'+
-      '<div class="table-scroll"><table><thead><tr><th>Provedor</th><th>Tarefa que entrega</th><th>Status</th><th>Quem espera</th></tr></thead><tbody>'+
-      noEta.map(p=>'<tr><td><span class="pill '+(p.prov.squad==='SRG'?'purple':'blue')+'">'+esc(p.prov.squad)+'</span> <a href="'+depIssueUrl(p.prov.key)+'" target="_blank">'+esc(p.prov.key)+'</a></td>'+
+      '<div class="table-scroll"><table><thead><tr><th>Provedor</th><th>Tarefa que entrega</th><th>Status</th><th>Vínculo</th><th>Quem espera</th></tr></thead><tbody>'+
+      noEta.map(p=>'<tr><td><span class="pill '+depPill(p.prov.squad)+'">'+esc(p.prov.squad)+'</span> <a href="'+depIssueUrl(p.prov.key)+'" target="_blank">'+esc(p.prov.key)+'</a></td>'+
         '<td>'+esc(p.prov.summary.slice(0,110))+(p.prov.summary.length>110?'…':'')+'</td>'+
         '<td>'+depStatusPill(p.prov.cat,p.prov.status)+'</td>'+
-        '<td><span class="pill gray">'+esc(p.wait.squad)+'</span> <a href="'+depIssueUrl(p.wait.key)+'" target="_blank">'+esc(p.wait.key)+'</a></td></tr>').join('')+
+        '<td><span class="pill '+(p.kind==='blocks'?'red':'gray')+'">'+(p.kind==='blocks'?'bloqueia':'action item')+'</span></td>'+
+        '<td><span class="pill '+depPill(p.wait.squad)+'">'+esc(p.wait.squad)+'</span> <a href="'+depIssueUrl(p.wait.key)+'" target="_blank">'+esc(p.wait.key)+'</a> '+depStatusPill(p.wait.cat,p.wait.status)+'</td></tr>').join('')+
       '</tbody></table></div></div>';
   }
   // Por squad que espera
   html+='<div class="panel"><h2>'+ico('user')+'Por squad que aguarda</h2>'+
-    '<p class="panel-sub">Quantas tarefas de cada squad dependem de ação de outro time e qual é a próxima liberação prevista.</p>'+
+    '<p class="panel-sub">Quantas tarefas de cada squad estão presas atrás de outra tarefa neste recorte e qual é a próxima liberação prevista.</p>'+
     '<table><thead><tr><th>Squad</th><th>Abertas</th><th>Depende de</th><th>Próxima liberação</th><th>Total (histórico)</th></tr></thead><tbody>'+
-    DEP_WAITERS.map(w=>{const v=DEPS.byWaiter[w];
-      const provs=Object.keys(v.provs).map(k=>'<span class="pill '+(k==='SRG'?'purple':'blue')+'">'+esc(k)+' · '+v.provs[k]+'</span>').join(' ')||'—';
+    DEP_WAITERS.map(w=>{const v=A.byWaiter[w];
+      const provs=Object.keys(v.provs).map(k=>'<span class="pill '+depPill(k)+'">'+esc(k)+' · '+v.provs[k]+'</span>').join(' ')||'—';
       return '<tr><td><strong>'+esc(w)+'</strong> <span class="micro t-sec">'+esc(DEP_SQUAD_NAME[w]||'')+'</span></td>'+
         '<td>'+(v.open?'<span class="pill '+(v.open>3?'red':'yellow')+'">'+v.open+'</span>':'<span class="pill green">0</span>')+'</td>'+
         '<td>'+provs+'</td><td>'+(v.next?depDdmm(v.next):'—')+'</td><td>'+v.n+'</td></tr>';}).join('')+
     '</tbody></table>'+
-    '<p class="panel-sub" style="margin-top:var(--sp-2)">Método: consulta <code>project in (AE,OE,EE,INF,SEC) AND issueLinkType in ("has action item","action item from")</code>. '+
-    c.total+' pares no recorte'+(c.inverted?', dos quais '+c.inverted+' estão gravados no Jira com o card que ESPERA como origem do link — é por isso que a direção literal não é usada para decidir quem entrega':'')+'. '+
-    (c.skipped?'Outros '+c.skipped+' links Action item ficaram fora: são pares dentro do mesmo projeto ou com projetos que não entram nesta leitura — '+
-      Object.keys(c.skippedBy).sort((a,b)=>c.skippedBy[b]-c.skippedBy[a]).slice(0,8).map(k=>esc(k)+' <strong>'+c.skippedBy[k]+'</strong>').join(' · ')+
+    '<p class="panel-sub" style="margin-top:var(--sp-2)">Método: consulta <code>project in (AE,OE,EE,INF,SEC) AND issueLinkType in ("has action item","action item from","blocks","is blocked by")</code>. '+
+    meta.total+' pares lidos no total — <strong>'+meta.cross+' entre squads</strong> e '+meta.intra+' internas; por tipo de vínculo, '+meta.blocksLinks+' <strong>Blocks</strong> e '+meta.actionLinks+' Action item. '+
+    (meta.inverted?'Em '+meta.inverted+' pares Action item o card que ESPERA está gravado como origem do link — é por isso que a direção literal não decide quem entrega nesse tipo; nos links Blocks ela decide. ':'')+
+    (meta.skipped?'Outros '+meta.skipped+' links ficaram fora: pares Action item dentro do mesmo projeto (direção indecidível) ou cujo lado que espera não é AE/EE/OE/INF — '+
+      Object.keys(meta.skippedBy).sort((a,b)=>meta.skippedBy[b]-meta.skippedBy[a]).slice(0,8).map(k=>esc(k)+' <strong>'+meta.skippedBy[k]+'</strong>').join(' · ')+
       '. Se quiser QUAL, INFRA, AUT ou MD como provedores/dependentes, é só somar o projeto ao recorte.':'')+'</p>'+
     '</div>';
   return html;
@@ -2373,7 +2453,7 @@ function depGanttHtml(rows){
     const dias=Math.abs(depDays(today,r.eta.date));
     const tip=r.prov.key+' → libera '+r.wait.key+' · '+(late?'atrasado ':'em ')+dias+' dia(s) · ETA '+depDdmm(r.eta.date)+(est?' (fim da sprint '+(r.eta.sprint||'')+')':' (duedate)');
     return '<div class="dep-row">'+
-      '<div class="lbl"><span class="pill '+(r.prov.squad==='SRG'?'purple':'blue')+'">'+esc(r.prov.squad)+'</span> '+
+      '<div class="lbl"><span class="pill '+depPill(r.prov.squad)+'">'+esc(r.prov.squad)+'</span> '+
         '<a href="'+depIssueUrl(r.prov.key)+'" target="_blank"><strong>'+esc(r.prov.key)+'</strong></a>'+
         '<br><span class="micro t-sec">libera <a href="'+depIssueUrl(r.wait.key)+'" target="_blank">'+esc(r.wait.key)+'</a> ('+esc(r.wait.squad)+')</span></div>'+
       '<div class="dep-tl">'+ticks+todayLine+
@@ -2384,15 +2464,13 @@ function depGanttHtml(rows){
   return '<div class="dep-gantt">'+bars+'</div>'+
     '<div class="dep-axis"><div></div><div class="scale">'+labels+'</div></div>';
 }
-// Botões do recorte (abertas × histórico): re-renderizam só o corpo da aba
+// Botões dos dois recortes (vínculo cross/intra × abertas/histórico): re-renderizam só o
+// corpo da aba, sem nova consulta ao Jira — todos os pares já estão em DEPS.pairs.
 function wireDeps(){
   const b=document.getElementById('depBody'); if(!b) return;
-  b.querySelectorAll('[data-depview]').forEach(btn=>btn.onclick=()=>{
-    DEP_VIEW=btn.dataset.depview;
-    b.innerHTML=withInfoIcons(depsBodyHtml());
-    wireInfo(b);
-    wireDeps();
-  });
+  const redraw=()=>{ b.innerHTML=withInfoIcons(depsBodyHtml()); wireInfo(b); wireDeps(); };
+  b.querySelectorAll('[data-depview]').forEach(btn=>btn.onclick=()=>{ DEP_VIEW=btn.dataset.depview; redraw(); });
+  b.querySelectorAll('[data-depscope]').forEach(btn=>btn.onclick=()=>{ DEP_SCOPE=btn.dataset.depscope; redraw(); });
 }
 
 /* ---------- Filtro de sprint (topo, ao lado de Atualizar) ----------

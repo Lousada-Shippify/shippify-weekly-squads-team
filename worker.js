@@ -53,8 +53,8 @@ const PROJECTS = ['AE', 'OE', 'EE', 'INF'];
 // verdade para Scope/Completed/Remaining SP e % de progresso, pedido em 20/07/2026).
 const BOARD_BY_PROJECT = { AE: 479, OE: 474, EE: 475, INF: 476 };
 
-// ── DEPENDÊNCIAS ENTRE SQUADS (aba Dependências, 20/08/2026) ─────────────────────
-// Consulta separada das métricas de sprint: as dependências vivem nos links "Action item"
+// ── DEPENDÊNCIAS ENTRE SQUADS (aba Dependências, 20/08/2026 · Blocks em 08/09/2026) ──
+// Consulta separada das métricas de sprint: as dependências vivem nos links "Blocks"/"Action item"
 // e aparecem também em SUBTAREFAS e em cards SEM sprint — que a JQL das squads exclui
 // (project = X AND sprint is not EMPTY AND issuetype NOT IN subtaskIssueTypes()). Por isso
 // esta busca não filtra sprint nem tipo, e inclui o projeto SEC (squad SRG, board 405).
@@ -64,7 +64,11 @@ const BOARD_BY_PROJECT = { AE: 479, OE: 474, EE: 475, INF: 476 };
 // e a regra (precedência SRG > INF) vive no front, em processDeps().
 const DEP_PROJECTS = ['AE', 'OE', 'EE', 'INF', 'SEC'];
 const DEP_FIELDS = ['summary', 'status', 'duedate', 'customfield_10020', 'assignee', 'issuetype', 'issuelinks', 'resolutiondate'];
-const DEP_JQL = 'project in (' + DEP_PROJECTS.join(',') + ') AND issueLinkType in ("has action item","action item from") ORDER BY key ASC';
+// 08/09/2026: somados os links "Blocks". Cards cujo ÚNICO vínculo é Blocks (OE-211 ← INF-541)
+// não entravam nesta consulta e ficavam invisíveis na aba, mesmo com o card em BLOCKED.
+const DEP_LINK_TYPES = ['has action item', 'action item from', 'blocks', 'is blocked by'];
+const DEP_JQL = 'project in (' + DEP_PROJECTS.join(',') + ') AND issueLinkType in ('
+  + DEP_LINK_TYPES.map(t => '"' + t + '"').join(',') + ') ORDER BY key ASC';
 
 function slimDep(issue) {
   const f = issue.fields || {};

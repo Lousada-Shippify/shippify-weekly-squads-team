@@ -41,8 +41,8 @@ const CR_STAGE_RE = /(CODE\s*REVIEW|PR\s*REVIEW|PULL\s*REQUEST)/i;
 // INF (Infrastructure, board 476) entrou em 28/07/2026 — mesmas métricas das outras squads.
 const PROJECTS = [ ['AE', 479], ['OE', 474], ['EE', 475], ['INF', 476] ];
 
-// ── DEPENDÊNCIAS ENTRE SQUADS (aba Dependências, 20/08/2026) ─────────────────────
-// Consulta separada das métricas de sprint: as dependências vivem nos links "Action item"
+// ── DEPENDÊNCIAS ENTRE SQUADS (aba Dependências, 20/08/2026 · Blocks em 08/09/2026) ──
+// Consulta separada das métricas de sprint: as dependências vivem nos links "Blocks"/"Action item"
 // e aparecem também em SUBTAREFAS e em cards SEM sprint — que a JQL das squads exclui
 // (project = X AND sprint is not EMPTY AND issuetype NOT IN subtaskIssueTypes()). Por isso
 // esta busca não filtra sprint nem tipo, e inclui o projeto SEC (squad SRG, board 405).
@@ -52,7 +52,11 @@ const PROJECTS = [ ['AE', 479], ['OE', 474], ['EE', 475], ['INF', 476] ];
 // e a regra (precedência SRG > INF) vive no front, em processDeps().
 const DEP_PROJECTS = ['AE', 'OE', 'EE', 'INF', 'SEC'];
 const DEP_FIELDS = ['summary', 'status', 'duedate', 'customfield_10020', 'assignee', 'issuetype', 'issuelinks', 'resolutiondate'];
-const DEP_JQL = 'project in (' + DEP_PROJECTS.join(',') + ') AND issueLinkType in ("has action item","action item from") ORDER BY key ASC';
+// 08/09/2026: somados os links "Blocks". Cards cujo ÚNICO vínculo é Blocks (OE-211 ← INF-541)
+// não entravam nesta consulta e ficavam invisíveis na aba, mesmo com o card em BLOCKED.
+const DEP_LINK_TYPES = ['has action item', 'action item from', 'blocks', 'is blocked by'];
+const DEP_JQL = 'project in (' + DEP_PROJECTS.join(',') + ') AND issueLinkType in ('
+  + DEP_LINK_TYPES.map(t => '"' + t + '"').join(',') + ') ORDER BY key ASC';
 
 function slimDep(issue) {
   const f = issue.fields || {};
@@ -94,7 +98,7 @@ async function fetchDeps() {
     }
     return { issues: out.map(slimDep) };
   } catch (e) {
-    console.warn('deps: consulta de links Action item falhou:', e.message);
+    console.warn('deps: consulta de links Blocks/Action item falhou:', e.message);
     return { issues: [], error: String(e.message || e) };
   }
 }
@@ -377,7 +381,7 @@ for (const [p, boardId] of PROJECTS) {
 }
 
 const deps = await fetchDeps();
-console.log('deps: ' + deps.issues.length + ' issues com link Action item em ' + DEP_PROJECTS.join('/') + (deps.error ? ' (erro: ' + deps.error + ')' : ''));
+console.log('deps: ' + deps.issues.length + ' issues com link Blocks/Action item em ' + DEP_PROJECTS.join('/') + (deps.error ? ' (erro: ' + deps.error + ')' : ''));
 const data = { generatedAt: new Date().toISOString(), squads, sprintReport, deps };
 await import('node:fs').then(fs => fs.writeFileSync('data.json', JSON.stringify(data)));
 console.log('data.json gerado em', data.generatedAt);
