@@ -1122,19 +1122,56 @@ function processSquad(sq, nodes, report){
     if(r.spNull) return null;
     return Math.max(0,(r.sp||0)-(r.spqa||0));
   };
+  const qaLead=(QA_OWNER[sq.code]||'').split(' — ')[0].trim();
+  const isQAperson=nm=>!!qaLead && (nm===qaLead || nm.startsWith(qaLead+' ') || qaLead.startsWith(nm+' ')
+    || nameKey(nm)===nameKey(qaLead));
+  const isNonDev=nm=>NON_DEV.some(x=>nm===x||nm.startsWith(x+' ')||x.startsWith(nm+' ')
+    || nameKey(nm)===nameKey(x));
+  // QUANTO vale a parcela de dev de um card = SEMPRE devPortion(card). As subtarefas decidem
+  // apenas COMO essa parcela e dividida entre pessoas, nunca QUANTO ela vale.
+  // Corrigido em 09/09/2026. Antes, quando o card tinha subtarefas, a parcela de dev era a SOMA
+  // DOS PONTOS DAS SUBTAREFAS -- e isso so funciona em squad que pontua subtarefa. No OE os pontos
+  // vivem no card (a skill /parabol-pontuacao grava 10546/10548/10028 no card, nao na subtarefa):
+  // 7 cards da Sprint 8 tinham subtarefas sem ponto nenhum, entao a parcela de dev deles virava 0
+  // enquanto cada subtarefa continuava contando como tarefa alocada. Resultado: 21 SP de dev
+  // sumiam (64 -> 43) e a tabela por pessoa nao fechava mais com o escopo da sprint
+  // (43 + 39,5 de QA = 82,5 contra 103,5 de Story Points). Medido nos 4 boards: a soma das
+  // subtarefas so bate com a parcela de dev em 56 de 112 cards com subtarefa, e em 10 as
+  // subtarefas nao tem ponto nenhum -- ou seja, a premissa antiga estava errada em toda squad.
+  // Rateio: proporcional aos pontos das subtarefas quando eles existem (preserva o peso relativo
+  // que a squad estimou), igual entre elas quando nao existem. O total continua reconciliando com
+  // Story Points = QA + dev, e o credito continua indo para quem fez a subtarefa.
+  const devUnits=r=>{
+    const subs=liveSubs(r);
+    const dp=devPortion(r);
+    const own=r.assignee||'Sem responsavel';
+    if(!subs.length) return [{who:own, sp:dp, done:r.cat==='done'}];
+    // A parcela de DEV do card fica com os DEVS. Subtarefa da pessoa de QA da squad (ou de quem
+    // esta em NON_DEV) sai do rateio: o esforco dela ja e medido pelo Story point QA, na linha de
+    // QA. Sem isso os cards de cerimonia -- PLANNING e TECH MONTHLY, que tem uma subtarefa por
+    // pessoa da squad, QA incluida -- levavam 1,25 SP de dev do OE para uma linha que nao aparece
+    // na tabela, e as linhas de dev somavam 62,75 contra os 64 SP de parcela de dev da sprint.
+    // Se sobrar nenhuma subtarefa de dev, mantemos todas (melhor atribuir do que perder o SP).
+    const devSubs=subs.filter(s=>{const nm=s.assignee||own; return !isQAperson(nm)&&!isNonDev(nm);});
+    const use=devSubs.length?devSubs:subs;
+    const ssp=use.reduce((a,s)=>a+(typeof s.sp==='number'?s.sp:0),0);
+    return use.map(s=>({
+      who:s.assignee||own,
+      sp:(dp==null)?null:(ssp>0?dp*((typeof s.sp==='number'?s.sp:0)/ssp):dp/use.length),
+      done:s.c==='done'
+    }));
+  };
   for(const r of recs){
     if(r.cancelled) continue;
-    const subs=liveSubs(r);
-    // unidades de trabalho da história: subtarefas (dev) ou, sem elas, a porção dev do próprio card
-    const units=subs.length
-      ? subs.map(s=>({who:s.assignee||r.assignee||'Sem responsável', sp:(typeof s.sp==='number'?s.sp:0), done:s.c==='done'}))
-      : [{who:r.assignee||'Sem responsável', sp:(devPortion(r)||0), done:r.cat==='done'}];
+    // unidades de trabalho da historia: ver devUnits() -- quanto vem do card, quem vem da subtarefa
+    const units=devUnits(r);
     for(const u of units){
       const d=mkDev0(u.who);
+      const usp=(typeof u.sp==='number')?u.sp:0;   // card sem estimativa nenhuma nao vira NaN
       for(const sid of r.ids){
         if(closedIds.has(sid)) d.part.add(sid);
         const bs=d.by[sid]=d.by[sid]||{aSP:0,aN:0,dSP:0,dN:0};
-        bs.aSP+=u.sp; bs.aN++;
+        bs.aSP+=usp; bs.aN++;
       }
       if(u.done){
         // ENTREGA POR UNIDADE (31/08/2026): a subtarefa concluída conta como entregue mesmo que o card
@@ -1148,10 +1185,10 @@ function processSquad(sq, nodes, report){
             :(r.ids.length?r.ids[r.ids.length-1]:null));
         if(target!=null){
           const bs=d.by[target]=d.by[target]||{aSP:0,aN:0,dSP:0,dN:0};
-          bs.dSP+=u.sp; bs.dN++;
-          bs.dAdj=(bs.dAdj||0)+u.sp*reworkFactor(r);   // mesma célula, já com desconto de retrabalho
+          bs.dSP+=usp; bs.dN++;
+          bs.dAdj=(bs.dAdj||0)+usp*reworkFactor(r);   // mesma célula, já com desconto de retrabalho
           if(closedIds.has(target)){
-            d.histSP+=u.sp; d.histN++;
+            d.histSP+=usp; d.histN++;
             // retrabalho da pessoa nas sprints FECHADAS, contado UMA vez por card (um card com 5
             // subtarefas não vale 5 retornos): base = cards que chegaram ao QA ou ao code review.
             if(!d.rwSeen) d.rwSeen=new Set();
@@ -1167,22 +1204,19 @@ function processSquad(sq, nodes, report){
       }
     }
   }
-  // Colunas da SPRINT ATUAL por dev = SUBTAREFAS (é nelas que o trabalho de dev acontece; a soma das
-  // subtarefas = porção dev da história). Histórias SEM subtarefa usam a porção dev do próprio card
-  // (Story Points total − Story point QA). Subtarefas CANCELADAS são excluídas. Assim eliminamos duas
-  // distorções: creditar o total (dev+QA) da história ao assignee do pai, e jogar em "Sem responsável"
-  // o trabalho que os devs fazem dentro das subtarefas. QA fica na linha própria (Story point QA).
+  // Colunas da SPRINT ATUAL por dev: mesma unidade da matriz (devUnits). QUANTO = parcela de dev do
+  // CARD (Story point dev, fallback total - QA); QUEM = responsavel da subtarefa quando existe,
+  // senao o do card. Subtarefas CANCELADAS sao excluidas. Assim eliminamos tres distorcoes:
+  // creditar o total (dev+QA) da historia ao assignee do pai, jogar em "Sem responsavel" o trabalho
+  // que os devs fazem dentro das subtarefas, e -- desde 09/09/2026 -- zerar a parcela de dev de todo
+  // card cujas subtarefas nao tem ponto. QA fica na linha propria (Story point QA).
   const mkDev=nm=>devMap[nm]=devMap[nm]||{name:nm,n:0,dn:0,sp:0,dsp:0,isp:0,tsp:0,noSP:0,histSP:0,histN:0,part:new Set(),by:{},rejCode:0,rejQA:0,baseQA:0,baseCR:0};
   const addCur=(nm,sp,cat)=>{const d=mkDev(nm); d.n++; if(sp==null){d.noSP++;} else {d.sp+=sp; if(cat==='done'){d.dn++;d.dsp+=sp;} else if(cat==='indeterminate'){d.isp+=sp;} else {d.tsp+=sp;}}};
   if(active&&!active.past){
     for(const r of recs){
       if(r.cancelled||!r.ids.includes(active.id)) continue;
-      const live=(r.subs||[]).filter(s=>!(s.c==='done'&&/cancel|discard|descart/i.test(s.s||'')));
-      if(live.length){
-        for(const s of live) addCur(s.assignee||r.assignee||'Sem responsável', s.sp, s.c);
-      } else {
-        addCur(r.assignee||'Sem responsável', devPortion(r), r.cat);
-      }
+      // MESMA regra da matriz (devUnits): a parcela de dev vem do card, o rateio vem da subtarefa.
+      for(const u of devUnits(r)) addCur(u.who, u.sp, u.done?'done':r.cat);
     }
   } else if(active){
     // Sprint fechada: as colunas da pessoa vêm da MATRIZ Dev × Sprint (by[sprintId]), que já
@@ -1196,11 +1230,6 @@ function processSquad(sq, nodes, report){
   }
   // A pessoa de QA da squad NÃO aparece nas linhas de DEV (ela é representada só na linha de QA).
   // Casa pelo nome que precede " — QA" no QA_OWNER (ex.: "Nathaly Brasiliano").
-  const qaLead=(QA_OWNER[sq.code]||'').split(' — ')[0].trim();
-  const isQAperson=nm=>!!qaLead && (nm===qaLead || nm.startsWith(qaLead+' ') || qaLead.startsWith(nm+' ')
-    || nameKey(nm)===nameKey(qaLead));
-  const isNonDev=nm=>NON_DEV.some(x=>nm===x||nm.startsWith(x+' ')||x.startsWith(nm+' ')
-    || nameKey(nm)===nameKey(x));
   // MÉDIA FINAL (31/08/2026) = janela móvel das 3 últimas sprints fechadas em que a pessoa participou,
   // já com o desconto de retrabalho. As Sprints 1–2 quase não têm entrega creditada (OE: 8,75 e 5 SP
   // somando TODOS os devs, contra 49,5–66,5 nas seguintes) e, valendo 2 dos 7 divisores, achatavam
