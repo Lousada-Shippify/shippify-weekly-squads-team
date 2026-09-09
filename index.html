@@ -356,6 +356,7 @@
   .ipp-item{display:inline-flex;align-items:center;font-family:var(--font-body);font-size:var(--fs-cap);color:var(--text-secondary)}
   .ipp-item i{width:var(--sp-1);height:var(--sp-1);border-radius:var(--r-sm);margin-right:var(--sp-05);flex:none}
   .ipp-item b{margin-left:var(--sp-05);color:var(--text-primary);font-family:var(--font-display);font-size:var(--fs-cap)}
+  .ipp-item em{margin-left:var(--sp-05);font-style:normal;color:var(--text-secondary)}
   /* Diagnóstico da sprint — linhas com bolinha de severidade (crítico / atenção / saudável) */
   .dg{display:flex;gap:var(--sp-1);align-items:flex-start;margin:0 0 var(--sp-1);line-height:1.5}
   .dg:last-child{margin-bottom:0}
@@ -1080,14 +1081,23 @@ function processSquad(sq, nodes, report){
     // mostrava 10 unidades quando o board tinha 23 itens em andamento em 5 statuses.
     // "No que o time está trabalhando AGORA" só faz sentido na sprint ativa — numa sprint fechada
     // o status de hoje já é o de outra sprint. Por isso o bloco fica vazio (e some da tela).
-    const ipLeaf={}; let ipSubN=0, ipCardN=0;
+    // SP DA UNIDADE (09/09/2026): os pontos vivem no CARD (§4 — subtarefa não soma SP), então a
+    // subtarefa em andamento herda a fatia proporcional do pai (SP do card ÷ nº de subtarefas).
+    // Assim a soma das fatias de um card nunca passa do SP dele e o total do bloco fecha com o
+    // "Em andamento" do progresso do sprint. Nunca usar o SP da subtarefa aqui: ele é estimativa
+    // de rateio de dev, não escopo — somá-lo duplicaria os pontos do card.
+    const ipLeaf={}; let ipSubN=0, ipCardN=0, ipSubSP=0, ipCardSP=0;
+    const ipBump=(k,sp)=>{const e=ipLeaf[k]||(ipLeaf[k]={n:0,sp:0}); e.n++; e.sp+=sp;};
     for(const r of (active.past?[]:acts)){
-      const subsIP=(r.subs||[]).filter(s=>s.c==='indeterminate');
-      for(const st of subsIP){ ipLeaf[st.s]=(ipLeaf[st.s]||0)+1; ipSubN++; }
-      if(r.cat==='indeterminate' && !subsIP.length){ ipLeaf[r.status]=(ipLeaf[r.status]||0)+1; ipCardN++; }
+      const subsAll=(r.subs||[]).filter(s=>!(s.c==='done'&&/cancel|discard|descart/i.test(s.s||'')));
+      const subsIP=subsAll.filter(s=>s.c==='indeterminate');
+      const share=subsAll.length?(r.sp||0)/subsAll.length:0;
+      for(const st of subsIP){ ipBump(st.s,share); ipSubN++; ipSubSP+=share; }
+      if(r.cat==='indeterminate' && !subsIP.length){ ipBump(r.status,r.sp||0); ipCardN++; ipCardSP+=(r.sp||0); }
     }
-    active.inprogByStatus=Object.entries(ipLeaf).sort((a,b)=>b[1]-a[1]);
-    active.inprogUnits={sub:ipSubN,card:ipCardN};
+    active.inprogByStatus=Object.entries(ipLeaf).map(function(e){return [e[0],e[1].n,+e[1].sp.toFixed(2)];})
+      .sort((a,b)=>b[1]-a[1]||b[2]-a[2]);
+    active.inprogUnits={sub:ipSubN,card:ipCardN,subSP:+ipSubSP.toFixed(2),cardSP:+ipCardSP.toFixed(2)};
   }
   // Desempenho por Dev/QA (responsável): sprint atual + média entregue por sprint FECHADA (viva —
   // recalculada a cada sprint encerrada). Participação = sprints fechadas em que teve issues.
@@ -1673,12 +1683,16 @@ function squadPlanHtml(sq){
         // história foi quebrada, senão o próprio card): mini-barra empilhada + legenda por status.
         (()=>{const ipl=a.inprogByStatus||[]; const tot=ipl.reduce((x,kv)=>x+kv[1],0);
           if(!tot) return '';
-          const u=a.inprogUnits||{sub:0,card:0};
+          const totSP=+(ipl.reduce((x,kv)=>x+(kv[2]||0),0)).toFixed(1);
+          const u=a.inprogUnits||{sub:0,card:0,subSP:0,cardSP:0};
           const PAL=DS_SERIES_VAR;   // só cores da marca (DS), via var() para o tema seguir :root
-          const seg=ipl.map((kv,i)=>'<div style="flex:'+kv[1]+';background:'+PAL[i%PAL.length]+'" title="'+esc(stLabel(kv[0]))+' · '+kv[1]+' unidade(s) de trabalho"></div>').join('');
-          const leg=ipl.map((kv,i)=>'<span class="ipp-item"><i style="background:'+PAL[i%PAL.length]+'"></i>'+esc(stLabel(kv[0]))+'<b>'+kv[1]+'</b></span>').join('');
+          // A barra continua proporcional às UNIDADES (uma leitura só, para não confundir);
+          // os SP entram como número na legenda, no tooltip e no cabeçalho.
+          const sp1=kv=>fmtSP(+(kv[2]||0).toFixed(1));
+          const seg=ipl.map((kv,i)=>'<div style="flex:'+kv[1]+';background:'+PAL[i%PAL.length]+'" title="'+esc(stLabel(kv[0]))+' · '+kv[1]+' unidade(s) de trabalho · '+sp1(kv)+' SP"></div>').join('');
+          const leg=ipl.map((kv,i)=>'<span class="ipp-item"><i style="background:'+PAL[i%PAL.length]+'"></i>'+esc(stLabel(kv[0]))+'<b>'+kv[1]+'</b><em>· '+sp1(kv)+' SP</em></span>').join('');
           return '<div class="ipp">'+
-            '<div class="ipp-head">No que o time está trabalhando agora <small>· '+tot+' unidades de trabalho ('+u.sub+' subtarefa'+(u.sub===1?'':'s')+' + '+u.card+' card'+(u.card===1?'':'s')+' sem quebra) — conta a subtarefa quando a história foi quebrada, senão o próprio card, sem contar os dois</small></div>'+
+            '<div class="ipp-head">No que o time está trabalhando agora <small>· '+tot+' unidades de trabalho · '+fmtSP(totSP)+' SP ('+u.sub+' subtarefa'+(u.sub===1?'':'s')+' = '+fmtSP(+(u.subSP||0).toFixed(1))+' SP + '+u.card+' card'+(u.card===1?'':'s')+' sem quebra = '+fmtSP(+(u.cardSP||0).toFixed(1))+' SP) — conta a subtarefa quando a história foi quebrada, senão o próprio card, sem contar os dois; os SP ficam no card, então cada subtarefa herda a fatia proporcional dele</small></div>'+
             '<div class="ipp-bar">'+seg+'</div>'+
             '<div class="ipp-legend">'+leg+'</div>'+
           '</div>';})();})()+
