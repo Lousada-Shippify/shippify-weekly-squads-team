@@ -820,7 +820,11 @@ function sprintSeries(s, recs){
   const cuts=workdayCutoffs(s.start,len);
   if(!cuts.length) return null;
   const scope=[],done=[],rem=[],n=[],dn=[];
-  for(const T of [new Date(s.start).getTime()-1, ...cuts]){
+  // Start = escopo COMPROMETIDO. Tolerância de 2h (limitada ao fim do D1) após o início: a planning
+  // costuma mover os cards minutos DEPOIS de clicar em "Iniciar sprint" — na OE S10 os 17 cards
+  // entraram 7–9 min depois e o Start dava 0, zerando o Ideal e inflando o "vs. ideal" (22/09/2026).
+  const t0=new Date(s.start).getTime(), T0=Math.min(t0+2*3600e3, cuts[0]);
+  for(const T of [T0, ...cuts]){
     let sc=0,dd=0,cn=0,cd=0;
     for(const r of pool){
       if(!memberAt(r,s.id,T)) continue;
@@ -1713,7 +1717,7 @@ function squadPlanHtml(sq){
         const diverge=(a.past&&(Math.abs(dScope)>0.5||Math.abs(dRem)>0.5))
           ? ' <strong>No fechamento reconstruído:</strong> '+fmtSP(se.scope[last])+' SP de escopo e '+fmtSP(se.rem[last])+' SP restantes — os cards acima usam o baseline oficial lido na época ('+fmtSP(a.badgeScope)+' / '+fmtSP(a.remaining)+' SP).'
           : '';
-        return '<p class="panel-sub" style="margin:8px 0 0">Reconstruído do <strong>changelog do Jira</strong>, dia útil a dia útil: <strong>Real</strong> = SP que ainda faltavam no fim daquele dia · <strong>Escopo</strong> = SP dentro da sprint naquele dia (sobe quando entra card, desce quando sai ou é cancelado) · <strong>Ideal</strong> = queda linear a partir do escopo comprometido na abertura. Cards cancelados saem do escopo — é a única diferença para o burndown nativo do Jira, que os mantém.'+diverge+'</p>';})()+
+        return '<p class="panel-sub" style="margin:8px 0 0">Reconstruído do <strong>changelog do Jira</strong>, dia útil a dia útil: <strong>Real</strong> = SP que ainda faltavam no fim daquele dia · <strong>Escopo</strong> = SP dentro da sprint naquele dia (sobe quando entra card, desce quando sai ou é cancelado) · <strong>Ideal</strong> = queda linear a partir do escopo comprometido na abertura (cards que entram até 2h após o início contam como comprometidos). Cards cancelados saem do escopo — é a única diferença para o burndown nativo do Jira, que os mantém.'+diverge+'</p>';})()+
       '<p style="margin:10px 0 0"><a class="jira-link" href="'+boardUrl(sq)+'" target="_blank">'+ico('external',13)+' Open Sprint Insights in Jira — Progresso + Burndown</a></p></div>';
   return html;
 }
