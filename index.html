@@ -938,16 +938,27 @@ function processSquad(sq, nodes, report){
   // sprint (scope/delivered/KPIs) continuam usando delivSprintId, restrito às sprints do card.
   {
     const realSeq=list.filter(s=>!String(s.id).startsWith('bl-'));
-    const sprintAt=t=>{ let best=null;
-      for(const s of realSeq){
-        const a=s.start?s.start.getTime():null, b=s.end?s.end.getTime():null;
-        if(a==null||b==null||t<a||t>=b+86400000) continue;
-        if(!best||a>best.start.getTime()) best=s;
-      }
-      return best; };
+    // Corrigido em 23/09/2026. Na virada de sprint as janelas se SOBREPÕEM: a Sprint 9 fecha
+    // 22/09 18:00 e a Sprint 10 começa 22/09 00:00 — e a folga de +1 dia no fim ampliava a
+    // sobreposição. A regra antiga ("a de início mais recente vence") jogava na Sprint 10 tudo
+    // que fechou no último dia da Sprint 9: o Robson aparecia com 13,5 SP · 10 tarefas entregues
+    // contra 8 alocadas no dia 2, com OE-408/OE-413/OE-439 que nem estão na Sprint 10.
+    // Ordem agora: (1) janela exata E sprint do próprio card; (2) folga de 1 dia E sprint do card;
+    // (3) janela exata de qualquer sprint (card parado numa sprint antiga — caso OE-58);
+    // (4) folga de 1 dia de qualquer sprint. Empate: início mais recente.
+    const sprintAt=(t,own)=>{
+      const pick=(grace,onlyOwn)=>{ let best=null;
+        for(const s of realSeq){
+          if(onlyOwn&&!(own||[]).includes(s.id)) continue;
+          const a=s.start?s.start.getTime():null, b=s.end?s.end.getTime():null;
+          if(a==null||b==null||t<a||t>=b+(grace?86400000:0)) continue;
+          if(!best||a>best.start.getTime()) best=s;
+        }
+        return best; };
+      return pick(false,true)||pick(true,true)||pick(false,false)||pick(true,false); };
     for(const r of recs){
       if(r.cancelled||r.cat!=='done'){ r.delivAtId=null; r.delivAtClosed=false; continue; }
-      const s=(r.doneAt!=null)?sprintAt(r.doneAt):null;
+      const s=(r.doneAt!=null)?sprintAt(r.doneAt,r.ids):null;
       const tgt=s||realSeq.find(x=>x.id===r.delivSprintId)||null;
       r.delivAtId=tgt?tgt.id:null;
       r.delivAtClosed=!!(tgt&&tgt.state==='closed');
