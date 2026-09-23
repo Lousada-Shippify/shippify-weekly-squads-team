@@ -829,7 +829,11 @@ function sprintSeries(s, recs){
   for(const r of pool){
     if(sprIds(r.hist&&r.hist.spr0).indexOf(sid)>=0){ firstIn=-Infinity; break; }
     const e=((r.hist&&r.hist.spr)||[]).find(x=>sprIds(x[1]).indexOf(sid)>=0);
-    if(!e){ firstIn=-Infinity; break; }            // membro sem evento = estava lá desde sempre
+    // Card na sprint SEM nenhum evento de Sprint no changelog (23/09/2026: OE-500, criado 16/09 e
+    // hoje na S10, com hist.spr vazio): a hora de entrada é DESCONHECIDA, não "desde sempre".
+    // Antes ele zerava firstIn e desligava a regra acima — o Start voltava a 0 SP, o Ideal ficava
+    // chapado em 0 e o "vs. ideal" mostrava +83 SP. Agora ele simplesmente não decide a abertura.
+    if(!e) continue;
     if(e[0]<firstIn) firstIn=e[0];
   }
   if(firstIn>open && isFinite(firstIn)) open=firstIn;
