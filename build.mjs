@@ -383,5 +383,20 @@ for (const [p, boardId] of PROJECTS) {
 const deps = await fetchDeps();
 console.log('deps: ' + deps.issues.length + ' issues com link Blocks/Action item em ' + DEP_PROJECTS.join('/') + (deps.error ? ' (erro: ' + deps.error + ')' : ''));
 const data = { generatedAt: new Date().toISOString(), squads, sprintReport, deps };
-await import('node:fs').then(fs => fs.writeFileSync('data.json', JSON.stringify(data)));
+// Mascara padrões de segredo que chegam em texto livre do Jira (ex.: INF-616 tem um AWS Access Key
+// ID no título). Sem isso o push protection do GitHub bloqueia o commit do bot e o fallback congela.
+// Só afeta o snapshot — o front não usa esses trechos para nenhum cálculo.
+const SECRET_RE = [
+  /\b(?:AKIA|ASIA|ABIA|ACCA|AGPA|AIDA|AIPA|ANPA|ANVA|APKA|AROA|ASCA)[A-Z0-9]{16}\b/g, // AWS key id
+  /\bgh[pousr]_[A-Za-z0-9]{36,}\b/g,                                                    // GitHub token
+  /\bgithub_pat_[A-Za-z0-9_]{22,}\b/g,
+  /\bxox[abprs]-[A-Za-z0-9-]{10,}\b/g,                                                  // Slack
+  /\bAIza[0-9A-Za-z_-]{35}\b/g,                                                         // Google API key
+  /\bsk_live_[0-9A-Za-z]{24,}\b/g,                                                      // Stripe
+  /-----BEGIN [A-Z ]*PRIVATE KEY-----/g,
+];
+let json = JSON.stringify(data), masked = 0;
+for (const re of SECRET_RE) json = json.replace(re, () => (masked++, '[REDACTED]'));
+if (masked) console.warn(`data.json: ${masked} possível(is) segredo(s) mascarado(s) antes do commit`);
+await import('node:fs').then(fs => fs.writeFileSync('data.json', json));
 console.log('data.json gerado em', data.generatedAt);
