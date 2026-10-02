@@ -524,6 +524,7 @@ const reworkFactor = r => 1 - Math.min(RW_CAP, RW_STEP*(((r&&r.rejCode)||0)+((r&
 // TOTAL devs, mesmo que apareçam como responsáveis de alguma subtarefa/história. Ex.: Gabriel
 // Goldner Silva (PM) e Rayanne Ferreira (Design) na AE. QA já é tratado à parte via QA_OWNER.
 // INF (confirmado em 28/07/2026): Luana é QA (aparece na linha de QA) e Reginaldo Soares não é dev.
+const AVG_EXCLUDE = {AE:['Sprint 2']};   // sprints fora da MÉDIA GERAL (seguem visíveis no relatório)
 const NON_DEV = ['Gabriel Goldner Silva', 'Rayanne Ferreira', 'Reginaldo Soares',
                  'Diego Albuquerque Teodoro'];   // PM da EE — não entra nas linhas de DEV
 // Chave de comparação de pessoas: primeiro + último nome, minúsculo e sem acento. Serve para casar
@@ -1277,22 +1278,29 @@ function processSquad(sq, nodes, report){
   const winIds=closedSeq.slice(-3).map(s=>s.id);
   const winLbl=closedSeq.slice(-3).map(s=>sprintLabel(s).replace(/^Sprint\s*/,'S')).join('–');
   const sumBy=(d,ids,k)=>ids.reduce((x,id)=>x+(((d.by||{})[id]||{})[k]||0),0);
+  // SPRINTS FORA DA MÉDIA GERAL (02/10/2026): continuam nas colunas do relatório, mas não entram
+  // no numerador nem no divisor da média geral. AE Sprint 2 excluída a pedido do Vitor.
+  const exclAvg=new Set(list.filter(s=>(AVG_EXCLUDE[sq.code]||[]).includes(sprintLabel(s).trim())).map(s=>s.id));
   const withAvg=d=>{
     const wIds=winIds.filter(id=>d.part.has(id));
     const useW=wIds.length>0;
     const ids=useW?wIds:[...d.part];
     const n=ids.length;
     const adj=sumBy(d,ids,'dAdj'), raw=sumBy(d,ids,'dSP'), tsk=sumBy(d,ids,'dN');
-    const histAdj=sumBy(d,[...d.part],'dAdj');
-    const pn=d.part.size;
-    return {...d, partN:pn, winN:n, winIds:ids,
+    const fullIds=[...d.part].filter(id=>!exclAvg.has(id));
+    const exIds=[...exclAvg];
+    const histAdj=sumBy(d,fullIds,'dAdj');
+    const hSP=d.histSP-sumBy(d,exIds,'dSP'), hN=d.histN-sumBy(d,exIds,'dN');
+    const pn=fullIds.length;
+    const exclLbl=list.filter(s=>exclAvg.has(s.id)&&d.part.has(s.id)).map(s=>sprintLabel(s).replace(/^Sprint\s*/,'S')).join(', ');
+    return {...d, partN:pn, exclLbl, winN:n, winIds:ids,
       winLbl:useW?winLbl:(n?'todas as fechadas':'sem sprint fechada'),
       avgSP:n?adj/n:0, avgSPraw:n?raw/n:0, avgN:n?tsk/n:0,
       // MÉDIA GERAL: todas as sprints fechadas em que participou, com as MESMAS regras (data real da
       // entrega, entrega por unidade e desconto de retrabalho). Fica em coluna própria ao lado da
       // janela das 3 últimas — a janela mostra o momento, a geral mostra a régua longa.
-      avgFull:pn?histAdj/pn:0, avgFullRaw:pn?d.histSP/pn:0, avgFullN:pn?d.histN/pn:0,
-      rwLossFull:d.histSP>0?(d.histSP-histAdj)/d.histSP:0,
+      avgFull:pn?histAdj/pn:0, avgFullRaw:pn?hSP/pn:0, avgFullN:pn?hN/pn:0,
+      rwLossFull:hSP>0?(hSP-histAdj)/hSP:0,
       rwLoss:raw>0?(raw-adj)/raw:0, rwIdx:retIdx(d.rwRej||0,d.rwBase||0),
       rwRej:d.rwRej||0, rwBase:d.rwBase||0, rwCards:d.rwCards||0};
   };
@@ -2129,7 +2137,7 @@ function squadDetailHtml(curSquad){
       const pct=Math.round(v.rwLossFull*100), pctW=Math.round(v.rwLoss*100);
       return '<td style="white-space:nowrap;background:rgba(78,203,113,.06)">'+
         '<strong title="'+esc(avgTip(v,v.avgFullRaw,pct))+'">'+fmtSP(Math.round(v.avgFull*100)/100)+' SP</strong> · '+(Math.round(v.avgFullN*10)/10)+' tarefas'+rwMark(v)+
-        '<br><small style="color:var(--text-secondary)">'+v.partN+' sprint(s) fechada(s)'+(pct>0?' · <span style="color:var(--laranja)">−'+pct+'%</span>':'')+'</small>'+
+        '<br><small style="color:var(--text-secondary)">'+v.partN+' sprint(s) fechada(s)'+(v.exclLbl?' <span title="excluída(s) da média geral; segue visível nas colunas">· sem '+esc(v.exclLbl)+'</span>':'')+(pct>0?' · <span style="color:var(--laranja)">−'+pct+'%</span>':'')+'</small>'+
         '<br><small style="font-size:10px;color:var(--text-disabled)" title="'+esc('média das 3 últimas fechadas ('+v.winLbl+') · '+(Math.round(v.avgN*10)/10)+' tarefas'+(pctW>0?' · desconto de retrabalho −'+pctW+'%':''))+'">3 últimas: '+fmtSP(Math.round(v.avgSP*100)/100)+' SP</small></td>';
     };
     html+='<div class="panel"><h2>'+ico('bars')+'Entregas por Dev/QA × Sprint</h2>'+
