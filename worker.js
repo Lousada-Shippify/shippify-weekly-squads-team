@@ -404,18 +404,34 @@ export default {
     }
     try {
       const auth = 'Basic ' + btoa(`${env.JIRA_EMAIL}:${env.JIRA_API_TOKEN}`);
+      // ?part=AE|OE|EE|INF|deps → só aquele pedaço. O plano Free do Cloudflare limita cada
+      // invocação a 50 subrequests; com as 4 squads + deps numa chamada só passamos de ~60 e o
+      // Worker devolvia 502 "Too many subrequests" (06/10/2026). Fatiado, cada parte usa ~10–20
+      // e o front dispara as 5 em paralelo. Sem ?part mantém o payload completo (compatibilidade).
+      const part = new URL(request.url).searchParams.get('part');
+      const json = (obj) => new Response(JSON.stringify(obj), {
+        headers: { ...corsHeaders(origin), 'Content-Type': 'application/json' },
+      });
+      if (part === 'deps') {
+        const deps = await fetchDeps(auth);
+        return json({ generatedAt: new Date().toISOString(), part, deps, live: true });
+      }
+      if (part && !PROJECTS.includes(part)) {
+        return new Response(JSON.stringify({ error: `part inválido: ${part}` }), {
+          status: 400, headers: { ...corsHeaders(origin), 'Content-Type': 'application/json' },
+        });
+      }
+      const projects = part ? [part] : PROJECTS;
       const squads = {};
       const sprintReport = {};
-      // Dependências (links Action item): dispara em paralelo com as squads e é aguardada no fim.
-      const depsP = fetchDeps(auth);
-      // Mapa status -> categoria: uma chamada so, compartilhada pelas 4 squads (burndown historico).
-      const kindsP = fetchStatusKinds(auth);
-      // As 4 squads são independentes → rodam EM PARALELO (antes era um laço sequencial e o tempo
-      // total somava: com INF + subtarefas de todas as sprints passou de 18s e começou a estourar
-      // o timeout de 25s do front, caindo pro snapshot. Dentro de cada squad, subtarefas/changelog/
-      // sprint report também vão em paralelo. Corrigido em 03/08/2026.
-      const statusKinds = await kindsP;
-      await Promise.all(PROJECTS.map(async (p) => {
+      // Dependências (links Action item): só no payload completo; no modo fatiado vêm em ?part=deps.
+      const depsP = part ? null : fetchDeps(auth);
+      // Mapa status -> categoria: uma chamada so, compartilhada pelas squads (burndown historico).
+      const statusKinds = await fetchStatusKinds(auth);
+      // As squads são independentes → rodam EM PARALELO (corrigido em 03/08/2026: sequencial
+      // estourava o timeout de 25s do front). Dentro de cada squad, subtarefas/changelog/sprint
+      // report também vão em paralelo.
+      await Promise.all(projects.map(async (p) => {
         const board = BOARD_BY_PROJECT[p];
         const jql = `project = ${p} AND sprint is not EMPTY AND issuetype NOT IN subtaskIssueTypes()`;
         const issues = await searchAll(auth, jql);
@@ -430,11 +446,9 @@ export default {
         squads[p] = issues.map(i => { const o = slim(i, bulk, statusKinds); o.subs = subByParent[i.key] || []; return o; });
         sprintReport[p] = report;
       }));
-      const deps = await depsP;
-      const data = { generatedAt: new Date().toISOString(), squads, sprintReport, deps, live: true };
-      return new Response(JSON.stringify(data), {
-        headers: { ...corsHeaders(origin), 'Content-Type': 'application/json' },
-      });
+      const data = { generatedAt: new Date().toISOString(), squads, sprintReport, live: true };
+      if (part) data.part = part; else data.deps = await depsP;
+      return json(data);
     } catch (e) {
       return new Response(JSON.stringify({ error: String(e.message || e) }), {
         status: 502, headers: { ...corsHeaders(origin), 'Content-Type': 'application/json' },

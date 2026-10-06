@@ -1538,15 +1538,33 @@ function buildData(raw){
 // antigo com falso "Proxy indisponível" (medido em 22/07/2026: até ~12s só na resposta do fetch).
 async function fetchLive(timeoutMs){
   if(!LIVE_ENDPOINT) return null;
+  // Fatiado em 5 chamadas paralelas (?part=AE|OE|EE|INF|deps): o plano Free do Cloudflare limita
+  // cada invocação do Worker a 50 subrequests e o payload completo passou disso em 06/10/2026
+  // (502 "Too many subrequests" → painel preso no data.json). As 4 squads são obrigatórias;
+  // deps é opcional (sem ela o loadAll já completa a aba com o snapshot).
   const ctrl=new AbortController();
   const timer=setTimeout(()=>ctrl.abort(),timeoutMs||25000);
+  const get=async part=>{
+    try{
+      const r=await fetch(LIVE_ENDPOINT+'?part='+part+'&t='+Date.now(),{signal:ctrl.signal,cache:'no-store'});
+      if(!r.ok) return null;
+      const d=await r.json();
+      return d&&!d.error?d:null;
+    }catch(e){ return null; }
+  };
   try{
-    const r=await fetch(LIVE_ENDPOINT+'?t='+Date.now(),{signal:ctrl.signal,cache:'no-store'});
+    const parts=await Promise.all([...SQUADS.map(s=>s.code),'deps'].map(get));
     clearTimeout(timer);
-    if(!r.ok) return null;
-    const d=await r.json();
-    if(d.error) return null;
-    return d;
+    // Worker antigo (sem suporte a ?part) devolve o payload completo em cada chamada: usa o primeiro.
+    const full=parts.find(d=>d&&!d.part&&d.squads);
+    if(full) return full;
+    const sq=parts.slice(0,SQUADS.length);
+    if(sq.some(d=>!d)) return null;
+    const out={generatedAt:sq.map(d=>d.generatedAt).sort()[0],squads:{},sprintReport:{},live:true};
+    for(const d of sq){ Object.assign(out.squads,d.squads||{}); Object.assign(out.sprintReport,d.sprintReport||{}); }
+    const dep=parts[SQUADS.length];
+    if(dep&&dep.deps) out.deps=dep.deps;
+    return out;
   }catch(e){ clearTimeout(timer); return null; }
 }
 
