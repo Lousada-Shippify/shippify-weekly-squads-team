@@ -520,6 +520,29 @@ const doneAtFromHist = h => {
 // perde na proporção do próprio SP. A linha de QA não sofre desconto (o retorno é achado dela).
 const RW_STEP = 0.25, RW_CAP = 0.5;
 const reworkFactor = r => 1 - Math.min(RW_CAP, RW_STEP*(((r&&r.rejCode)||0)+((r&&r.rejQA)||0)));
+// RATEIO EM GRADE DE 0,5 (27/10/2026). A squad estima só inteiros e meios, mas o rateio da parcela
+// de dev entre subtarefas devolvia dízimas (2,344 · 0,625 · 0,333) e a tabela mostrava 25,34 SP.
+// splitSP reparte `total` pelos `weights` em múltiplos de 0,5 pelo método do MAIOR RESTO: cada fatia
+// recebe o piso da sua cota e as sobras vão para as maiores frações (empate: maior peso, depois a
+// ordem). A SOMA DAS FATIAS É SEMPRE IGUAL A `total` — nenhum card ganha ou perde ponto, então o
+// alocado da sprint fecha exatamente com o de antes. Se o próprio card não cabe na grade de 0,5
+// (ex.: 1,75 gravado no Jira), cai para a grade de 0,25; fora das duas, mantém a proporção exata.
+// Esses cards aparecem no diagnóstico ("pontos fora da grade") para serem corrigidos no Jira.
+const splitSP = (total, weights) => {
+  const n = weights.length; if (!n) return [];
+  if (typeof total !== 'number') return weights.map(() => null);
+  const pos = weights.map(w => (typeof w === 'number' && w > 0) ? w : 0);
+  const W0 = pos.reduce((a, w) => a + w, 0);
+  const wt = W0 > 0 ? pos : weights.map(() => 1), W = W0 > 0 ? W0 : n;
+  const g = [0.5, 0.25].find(x => Math.abs(total / x - Math.round(total / x)) < 1e-9);
+  if (!g) return wt.map(w => total * w / W);
+  const N = Math.round(total / g);
+  const ideal = wt.map(w => N * w / W);
+  const base = ideal.map(x => Math.floor(x + 1e-9));
+  const ord = ideal.map((x, i) => [x - base[i], wt[i], i]).sort((p, q) => (q[0] - p[0]) || (q[1] - p[1]) || (p[2] - q[2]));
+  for (let k = 0, rest = N - base.reduce((a, b) => a + b, 0); k < rest; k++) base[ord[k % n][2]]++;
+  return base.map(k => k * g);
+};
 // Pessoas que NÃO são desenvolvedoras (PM, Design, etc.) — não entram nas linhas de DEV nem no
 // TOTAL devs, mesmo que apareçam como responsáveis de alguma subtarefa/história. Ex.: Gabriel
 // Goldner Silva (PM) e Rayanne Ferreira (Design) na AE. QA já é tratado à parte via QA_OWNER.
@@ -1121,8 +1144,10 @@ function processSquad(sq, nodes, report){
     for(const r of (active.past?[]:acts)){
       const subsAll=(r.subs||[]).filter(s=>!(s.c==='done'&&/cancel|discard|descart/i.test(s.s||'')));
       const subsIP=subsAll.filter(s=>s.c==='indeterminate');
-      const share=subsAll.length?(r.sp||0)/subsAll.length:0;
-      for(const st of subsIP){ ipBump(st.s,share); ipSubN++; ipSubSP+=share; }
+      // fatias na grade de 0,5 (splitSP): a soma das fatias de TODAS as subtarefas fecha com o SP do card
+      const shares=splitSP(r.sp||0, subsAll.map(()=>1));
+      subsAll.forEach((st,i)=>{ if(st.c!=='indeterminate') return; const share=shares[i]||0;
+        ipBump(st.s,share); ipSubN++; ipSubSP+=share; });
       if(r.cat==='indeterminate' && !subsIP.length){ ipBump(r.status,r.sp||0); ipCardN++; ipCardSP+=(r.sp||0); }
     }
     active.inprogByStatus=Object.entries(ipLeaf).map(function(e){return [e[0],e[1].n,+e[1].sp.toFixed(2)];})
@@ -1194,10 +1219,20 @@ function processSquad(sq, nodes, report){
     // Se sobrar nenhuma subtarefa de dev, mantemos todas (melhor atribuir do que perder o SP).
     const devSubs=subs.filter(s=>{const nm=s.assignee||own; return !isQAperson(nm)&&!isNonDev(nm);});
     const use=devSubs.length?devSubs:subs;
-    const ssp=use.reduce((a,s)=>a+(typeof s.sp==='number'?s.sp:0),0);
-    return use.map(s=>({
+    // Rateio em grade de 0,5 (splitSP, 27/10/2026): proporcional aos pontos das subtarefas quando
+    // existem, igual quando não existem — e a soma das fatias é sempre exatamente dp.
+    // Em dois estágios para o ENTREGUE também ficar estável: primeiro a parcela é repartida entre
+    // "subtarefas concluídas" e "não concluídas" (cada grupo arredondado pela sua cota exata), depois
+    // dentro de cada grupo. Assim o entregue do card só se move quando ele está parcialmente pronto.
+    const w=use.map(s=>typeof s.sp==='number'?s.sp:0), Wsum=w.reduce((x,y)=>x+y,0);
+    const ex=w.map(x=>Wsum>0?x/Wsum:1/use.length), isD=use.map(s=>s.c==='done');
+    const grp=splitSP(dp, [ex.reduce((x,e,i)=>x+(isD[i]?e:0),0), ex.reduce((x,e,i)=>x+(isD[i]?0:e),0)]);
+    const shares=new Array(use.length);
+    [true,false].forEach((flag,gi)=>{const idx=use.map((_,i)=>i).filter(i=>isD[i]===flag); if(!idx.length) return;
+      splitSP(grp[gi], idx.map(i=>ex[i])).forEach((v,k)=>{shares[idx[k]]=v;});});
+    return use.map((s,i)=>({
       who:s.assignee||own,
-      sp:(dp==null)?null:(ssp>0?dp*((typeof s.sp==='number'?s.sp:0)/ssp):dp/use.length),
+      sp:(dp==null)?null:shares[i],
       done:s.c==='done'
     }));
   };
@@ -1457,6 +1492,22 @@ function processSquad(sq, nodes, report){
     const noDev=A.filter(r=>!(r.subs||[]).length && r.spdev==null && (r.spqa!=null||!r.spNull));
     if(noDev.length) add(C, noDev.length>=3?'warn':'ok',
       '<b>'+pl(noDev.length,'card sem "Story point dev"','cards sem "Story point dev"')+'</b> ('+kl(noDev)+') — sem subtarefa e sem a parcela de dev estimada, o painel cai no fallback <em>total − QA</em>, que subestima o dev quando o total não foi atualizado.');
+    // Qualidade dos pontos (27/10/2026): o painel reparte na grade de 0,5 sem mudar o total do card,
+    // mas três padrões no Jira continuam distorcendo QUEM recebe os pontos — e só se corrigem lá.
+    const offGrid=x=>typeof x==='number'&&Math.abs(x*2-Math.round(x*2))>1e-9;
+    const qtr=A.filter(r=>[r.sp,r.spdev,r.spqa].some(offGrid)||liveSubs(r).some(s=>offGrid(s.sp)));
+    if(qtr.length) add(C, qtr.length>=3?'warn':'ok',
+      '<b>'+pl(qtr.length,'card com pontos fora da grade de 0,5','cards com pontos fora da grade de 0,5')+'</b> ('+kl(qtr)+') — há valores .25/.75 gravados no Jira (card ou subtarefa). O painel respeita o valor, mas a squad estima só inteiros e meios: corrija no card.');
+    const qaSubNoQA=A.filter(r=>!(r.spqa>0)&&liveSubs(r).some(s=>isQAperson(s.assignee||'')));
+    // card de cerimônia já listado acima não se repete aqui (a diferença é justamente a parte da QA)
+    const mism=A.filter(r=>{const dp=devPortion(r); if(dp==null||qaSubNoQA.includes(r)) return false;
+      const ss=liveSubs(r).filter(s=>{const nm=s.assignee||r.assignee||''; return !isQAperson(nm)&&!isNonDev(nm);});
+      const t=ss.reduce((x,s)=>x+(typeof s.sp==='number'?s.sp:0),0);
+      return t>0&&Math.abs(t-dp)>1e-9;});
+    if(mism.length) add(C, mism.length>=3?'warn':'ok',
+      '<b>'+pl(mism.length,'card em que as subtarefas não somam o "Story point dev"','cards em que as subtarefas não somam o "Story point dev"')+'</b> ('+kl(mism)+') — vale a parcela de dev do card; as subtarefas só definem a proporção entre as pessoas. Alinhe os pontos das subtarefas ao card para o rateio refletir a estimativa.');
+    if(qaSubNoQA.length) add(C, qaSubNoQA.length>=3?'warn':'ok',
+      '<b>'+pl(qaSubNoQA.length,'card com subtarefa da QA e sem "Story point QA"','cards com subtarefa da QA e sem "Story point QA"')+'</b> ('+kl(qaSubNoQA)+') — comum nas cerimônias: sem o campo de QA preenchido, a parte da QA é repartida entre os devs.');
     const noOwn=A.filter(r=>!r.assignee);
     if(noOwn.length) add(C, noOwn.length>=3?'warn':'ok',
       '<b>'+pl(noOwn.length,'card sem responsável','cards sem responsável')+'</b> ('+kl(noOwn)+') — ninguém assumiu, então não há a quem cobrar o andamento.');
@@ -2121,7 +2172,7 @@ function squadDetailHtml(curSquad){
       qaRowHtml+
       '</tbody></table></div>'+
       '<p class="panel-note" style="font-size:11px;color:var(--text-disabled);margin:8px 0 0"><strong>↩︎ Ret. QA / Ret. código</strong> = retornos ÷ cards da pessoa que chegaram a cada estágio (0 é ótimo). Na linha de QA aparece a média da squad — o retrabalho que o QA absorve.</p>'+
-      (qaRowHtml?'<p class="panel-note" style="font-size:11px;color:var(--text-disabled);margin:8px 0 0">'+ico('flask',13)+' A linha de QA é complementar (não soma no TOTAL devs). <strong>DEV</strong> = pontos alocados nas <strong>subtarefas</strong> (ou o <strong>Story point dev</strong> do card, quando não há subtarefa); <strong>QA</strong> = <strong>Story point QA</strong> das histórias, contabilizado quando a issue entra no fluxo de QA. São partes do mesmo Story Points (total = DEV + QA), medidas na granularidade real de cada uma — por isso podem não fechar exatamente com o escopo do card (subtarefas têm estimativa própria e o QA só entra ao chegar no fluxo de QA).</p>':'')+
+      (qaRowHtml?'<p class="panel-note" style="font-size:11px;color:var(--text-disabled);margin:8px 0 0">'+ico('flask',13)+' A linha de QA é complementar (não soma no TOTAL devs). <strong>DEV</strong> = pontos alocados nas <strong>subtarefas</strong> (ou o <strong>Story point dev</strong> do card, quando não há subtarefa); <strong>QA</strong> = <strong>Story point QA</strong> das histórias, contabilizado quando a issue entra no fluxo de QA. Quando o card tem várias subtarefas, a parcela de dev é repartida em múltiplos de 0,5 (maior resto) — a soma das fatias é sempre igual ao card, então o total alocado não muda. São partes do mesmo Story Points (total = DEV + QA), medidas na granularidade real de cada uma — por isso podem não fechar exatamente com o escopo do card (subtarefas têm estimativa própria e o QA só entra ao chegar no fluxo de QA).</p>':'')+
       '</div>';
     // Matriz Dev/QA × Sprint: entregas (e alocação) por sprint + média final
     const realS=list.filter(s=>!String(s.id).startsWith('bl-'));
